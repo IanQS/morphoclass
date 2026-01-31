@@ -23,7 +23,7 @@ import numpy as np
 import scipy.sparse
 from tmd.io.io import load_neuron
 from tmd.io.io import load_population
-from tmd.Topology.analysis import get_persistence_image_data
+from tmd.Topology.analysis import get_average_persistence_image
 from tmd.Topology.methods import get_persistence_diagram
 from tmd.Tree.Tree import Tree
 
@@ -54,18 +54,14 @@ def load_apical_persistence_diagrams(folder, mtype):
 
     for neuron in population.neurons:
         if len(neuron.apical) != 1:
-            raise ValueError(
-                f"Was expecting exactly one apical tree, found: {len(neuron.apical)}"
-            )
+            raise ValueError(f"Was expecting exactly one apical tree, found: {len(neuron.apical)}")
 
         persistence_diagrams.append(get_persistence_diagram(neuron.apical[0]))
 
     return persistence_diagrams
 
 
-def augment_persistence_diagrams(
-    persistence_diagrams, xlims, ylims, factor=10, maxd=2, p=0.5
-):
+def augment_persistence_diagrams(persistence_diagrams, xlims, ylims, factor=10, maxd=2, p=0.5):
     """Augment persistence diagrams.
 
     Try the naive approach: for each persistence diagram randomly
@@ -86,12 +82,10 @@ def augment_persistence_diagrams(
             new_diagram = []
             for x, y in diagram:
                 if random.random() < p:
-                    new_diagram.append(
-                        [
-                            x + (random.random() * 2 - 1) * dx,
-                            y + (random.random() * 2 - 1) * dy,
-                        ]
-                    )
+                    new_diagram.append([
+                        x + (random.random() * 2 - 1) * dx,
+                        y + (random.random() * 2 - 1) * dy,
+                    ])
                 else:
                     new_diagram.append([x, y])
             augmented_diagrams.append(new_diagram)
@@ -99,9 +93,7 @@ def augment_persistence_diagrams(
     return augmented_diagrams
 
 
-def augment_persistence_diagrams_v2(
-    persistence_diagrams, labels, xlims, ylims, factor=10, maxd=2, p=0.5
-):
+def augment_persistence_diagrams_v2(persistence_diagrams, labels, xlims, ylims, factor=10, maxd=2, p=0.5):
     """Augment persistence diagrams.
 
     Try the naive approach: for each persistence diagram randomly
@@ -134,12 +126,10 @@ def augment_persistence_diagrams_v2(
             new_diagram = []
             for x, y in diagram:
                 if random.random() < p:
-                    new_diagram.append(
-                        [
-                            x + (random.random() * 2 - 1) * dx,
-                            y + (random.random() * 2 - 1) * dy,
-                        ]
-                    )
+                    new_diagram.append([
+                        x + (random.random() * 2 - 1) * dx,
+                        y + (random.random() * 2 - 1) * dy,
+                    ])
                 else:
                     new_diagram.append([x, y])
             augmented_diagrams.append(new_diagram)
@@ -148,9 +138,7 @@ def augment_persistence_diagrams_v2(
     return augmented_diagrams, augmented_labels
 
 
-def persistence_diagrams_to_persistence_images(
-    persistence_diagrams, xlims=None, ylims=None
-):
+def persistence_diagrams_to_persistence_images(persistence_diagrams, xlims=None, ylims=None):
     """
     Convert a persistence diagrams to persistence images.
 
@@ -159,12 +147,9 @@ def persistence_diagrams_to_persistence_images(
     :param ylims: the y-dimension of the persistence images to create
     :return: an numpy array with the create persistence images
     """
-    return np.array(
-        [
-            get_persistence_image_data(diagram, xlims=xlims, ylims=ylims)
-            for diagram in persistence_diagrams
-        ]
-    )
+    return np.array([
+        get_average_persistence_image(diagram, xlims=xlims, ylims=ylims) for diagram in persistence_diagrams
+    ])
 
 
 def reduce_tree_to_branching(tree):
@@ -194,9 +179,7 @@ def reduce_tree_to_branching(tree):
     parents = adj.argmax(axis=1).getA1()
     for i in idx[1:]:  # skip the root
         p = parents[i]
-        while (
-            p not in idx
-        ):  # this could end up in an infinite loop for bad data, avoid?
+        while p not in idx:  # this could end up in an infinite loop for bad data, avoid?
             p = parents[p]
         adj_new[i, p] = 1
 
@@ -291,10 +274,7 @@ def pickle_data(data_dir, rewrite=False):
             try:
                 neuron = load_neuron(sample_path)
             except Exception as e:
-                print(
-                    f'Loading neuron "{sample_path}" failed with the '
-                    "following exception:"
-                )
+                print(f'Loading neuron "{sample_path}" failed with the following exception:')
                 print(e)
                 continue
 

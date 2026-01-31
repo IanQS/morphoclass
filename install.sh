@@ -1,11 +1,11 @@
 #!/bin/bash
 
 echo "Installing morphoclass"
-pip install . -c constraints.txt
+uv pip install . -c constraints.txt
 
 echo "Checking the PyTorch version"
 SED=$(which gsed || which sed)
-TORCH_VERSION=$(pip freeze | grep torch== | $SED -re "s/torch==([^+]+).*/\1/")
+TORCH_VERSION=$(uv pip freeze | grep torch== | $SED -re "s/torch==([^+]+).*/\1/")
 if [ -z "$TORCH_VERSION" ]
 then
   echo ">> PyTorch should have been installed, but no installation of it was found"
@@ -23,7 +23,7 @@ then
     echo ">> PyTorch was installed with CUDA support, but no CUDA toolkit libraries were found."
     echo ">> Re-installing the CPU version of PyTorch"
     echo ">> PyTorch version: $TORCH_VERSION"
-    pip install "torch==${TORCH_VERSION}+cpu" -f https://download.pytorch.org/whl/torch_stable.html
+    uv pip install "torch==${TORCH_VERSION}+cpu" -f https://download.pytorch.org/whl/torch_stable.html
   fi
 fi
 
@@ -48,12 +48,12 @@ echo "$FIND_LINKS"
 # from the find-links URL pip will download the source distribution from
 # the index and try to build a wheel form it. To avoid this and to force lookup
 # in the find-links URL disable the index completely.
-pip install torch-scatter --no-index -f "$FIND_LINKS"
-pip install torch-sparse --no-index -f "$FIND_LINKS"
-pip install torch-cluster --no-index -f "$FIND_LINKS"
-pip install torch-spline-conv --no-index -f "$FIND_LINKS"
-pip install "torch-geometric<2"
+uv pip install torch-scatter --no-index -f "$FIND_LINKS"
+uv pip install torch-sparse --no-index -f "$FIND_LINKS"
+uv pip install torch-cluster --no-index -f "$FIND_LINKS"
+uv pip install torch-spline-conv --no-index -f "$FIND_LINKS"
+uv pip install "torch-geometric<2"
 
 echo "Morphoclass and PyTorch-related packages that were installed are:"
-pip list | grep -E "^torch[=|-]|^morphoclass" --color=never
+uv pip list | grep -E "^torch[=|-]|^morphoclass" --color=never
 echo "Finished"
