@@ -35,8 +35,8 @@ def samples():
         Data(path=pathlib.Path("IPC/d.asc")),
     ]
 
-    morphology1 = nm.load_morphology("tests/data/L5/TPC_A/random1.swc")
-    morphology2 = nm.load_morphology("tests/data/L5/TPC_B/random3.swc")
+    morphology1 = nm.load_morphology("tests/data/L5/TPC_A/random1.swc").to_morphio()
+    morphology2 = nm.load_morphology("tests/data/L5/TPC_B/random3.swc").to_morphio()
     for section in morphology2.root_sections:
         if section.type == nm.NeuriteType.apical_dendrite:
             morphology2.delete_section(section)

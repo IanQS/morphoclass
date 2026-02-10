@@ -12,6 +12,7 @@
 # See the License for the specific language governing permissions and
 # limitations under the License.
 """Implementation of the AttentionGlobalPool layer."""
+
 from __future__ import annotations
 
 import torch
@@ -19,7 +20,7 @@ from torch.nn import Module
 from torch.nn import Parameter
 from torch.nn.init import calculate_gain
 from torch.nn.init import xavier_uniform_
-from torch_scatter import scatter_add
+from morphoclass.scatter import scatter_add
 
 
 class AttentionGlobalPool(Module):

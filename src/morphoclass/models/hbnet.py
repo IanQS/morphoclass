@@ -12,15 +12,15 @@
 # See the License for the specific language governing permissions and
 # limitations under the License.
 """Implementation of the hierarchical, bidirectional net (HBNet)."""
+
 from __future__ import annotations
 
 import torch.nn
 import torch.nn.functional as F
 from torch_geometric.nn import global_mean_pool
-from torch_scatter import scatter_add
-from torch_scatter import scatter_max
 
 from morphoclass import layers
+from morphoclass.scatter import scatter_add, scatter_max
 
 
 class HBNet(torch.nn.Module):
@@ -209,9 +209,7 @@ class HBNet(torch.nn.Module):
             # No new children were found, we're finished
             return
         else:
-            yield from self.gen_hierarchical_probabilities(
-                new_probabilities, new_mask, hl
-            )
+            yield from self.gen_hierarchical_probabilities(new_probabilities, new_mask, hl)
 
     def compute_hierarchical_metric(self, metric_function, data, hl):
         """Compute metric for each layer in the label hierarchy.
@@ -234,9 +232,7 @@ class HBNet(torch.nn.Module):
         results = []
         parent_mask = torch.tensor(hl.roots, dtype=torch.bool)
         flat_proba = self.predict_probabilities(data)
-        for mask, proba in self.gen_hierarchical_probabilities(
-            flat_proba, parent_mask, hl
-        ):
+        for mask, proba in self.gen_hierarchical_probabilities(flat_proba, parent_mask, hl):
             t = data.y_oh[:, mask]
             p = proba[:, mask]
 
@@ -306,9 +302,7 @@ class HBNet(torch.nn.Module):
         to_oh = torch.eye(pred_prob.shape[1], dtype=torch.bool)
 
         last_mask = None
-        for mask, prob in self.gen_hierarchical_probabilities(
-            pred_prob, parent_mask, hl
-        ):
+        for mask, prob in self.gen_hierarchical_probabilities(pred_prob, parent_mask, hl):
             pred_h[to_oh[prob.argmax(dim=1).detach()]] = 1
             # `mask` and `prob` of the last item correspond to flat predictions
             # which we need for the macro and None averages
@@ -344,9 +338,7 @@ class HBNet(torch.nn.Module):
             i_intersect = (i_predictions == 1) & (i_labels == 1)
 
             score_intersect = y_h[i_intersect] * pred_h[i_intersect]
-            p_h_cls_t = (
-                torch.sum(score_intersect).to(torch.float) / pred_h[i_predictions].sum()
-            )
+            p_h_cls_t = torch.sum(score_intersect).to(torch.float) / pred_h[i_predictions].sum()
             r_h_cls_t = torch.sum(score_intersect).to(torch.float) / y_h[i_labels].sum()
 
             p_h_cls = p_h_cls_t.item()

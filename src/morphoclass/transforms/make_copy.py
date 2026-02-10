@@ -12,6 +12,7 @@
 # See the License for the specific language governing permissions and
 # limitations under the License.
 """Implementation of the `MakeCopy` transform."""
+
 from __future__ import annotations
 
 from copy import copy
@@ -19,7 +20,8 @@ from copy import deepcopy
 
 import torch
 from morphio.mut import Morphology
-from neurom.core import Neuron
+
+from neurom.core import Morphology as Neuron
 from tmd.Tree.Tree import Tree
 
 from morphoclass.data.morphology_data import MorphologyData
@@ -81,9 +83,7 @@ class MakeCopy:
                 new_obj = deepcopy(obj)
             except TypeError:
                 new_obj = obj
-                print_warning(
-                    f"Couldn't copy contents of key {key}, " "keeping the original."
-                )
+                print_warning(f"Couldn't copy contents of key {key}, keeping the original.")
             return new_obj
 
     def __call__(self, data):
@@ -99,13 +99,11 @@ class MakeCopy:
         data
             A copy of the input morphology data sample.
         """
-        new_data = MorphologyData.from_dict(
-            {
-                k: self.clone_obj(k, v)
-                for k, v in data.__dict__.items()
-                if self.keep_fields is None or k in self.keep_fields
-            }
-        )
+        new_data = MorphologyData.from_dict({
+            k: self.clone_obj(k, v)
+            for k, v in data.__dict__.items()
+            if self.keep_fields is None or k in self.keep_fields
+        })
 
         return new_data
 
