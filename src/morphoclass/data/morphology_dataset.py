@@ -77,7 +77,7 @@ class MorphologyDataset(Dataset):
         if pre_transform is not None:
             self.data = [pre_transform(data) for data in self.data]
 
-        labels = {data.label for data in self.data}
+        labels = {getattr(data, 'label', None) for data in self.data}
         if any(labels):
             self.label_to_y = {label: y for y, label in enumerate(sorted(labels))}
             self.y_to_label = {y: label for label, y in self.label_to_y.items()}

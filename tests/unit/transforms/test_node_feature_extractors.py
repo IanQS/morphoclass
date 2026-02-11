@@ -17,6 +17,7 @@ import morphio
 import numpy as np
 import pytest
 import torch
+from neurom.core import Morphology as NeuroMorphology
 from torch_geometric.transforms import Compose
 
 from morphoclass.data import MorphologyDataset
@@ -299,7 +300,11 @@ def test_extract_branching_angles(capsys):
         transform=transform,
     )
     data = dataset[0]
-    for root in data.morphology.root_sections:
+    # Convert NeuroM morphology to MorphIO if needed
+    morphology = data.morphology
+    if isinstance(morphology, NeuroMorphology):
+        morphology = morphology.to_morphio()
+    for root in morphology.root_sections:
         if root.type == morphio.SectionType.apical_dendrite:
             data.tmd_neurites[0] = morphio_root_section_to_tmd_tree(
                 root, remove_duplicates=False

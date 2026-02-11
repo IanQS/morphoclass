@@ -16,6 +16,7 @@ from __future__ import annotations
 import logging
 import pathlib
 
+import morphio.mut
 import neurom as nm
 import pytest
 from torch_geometric.data import Data
@@ -36,7 +37,10 @@ def samples():
     ]
 
     morphology1 = nm.load_morphology("tests/data/L5/TPC_A/random1.swc").to_morphio()
-    morphology2 = nm.load_morphology("tests/data/L5/TPC_B/random3.swc").to_morphio()
+    # Use mutable morphology to enable delete_section()
+    morphology2 = morphio.mut.Morphology(
+        nm.load_morphology("tests/data/L5/TPC_B/random3.swc").to_morphio()
+    )
     for section in morphology2.root_sections:
         if section.type == nm.NeuriteType.apical_dendrite:
             morphology2.delete_section(section)

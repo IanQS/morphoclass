@@ -75,8 +75,8 @@ class MakeCopy:
             # morphio._morphio.Morphology (immutable) - convert to neurom for compatibility
             return Neuron(obj)
         elif type(obj) is Neuron:
-            # neurom.core.Morphology
-            return Neuron(obj)
+            # neurom.core.Morphology - convert to morphio and back to neurom
+            return Neuron(obj.to_morphio())
         elif type(obj) in [list, tuple, set, frozenset]:
             return type(obj)(cls.clone_obj(None, x) for x in obj)
         elif type(obj) is Tree:

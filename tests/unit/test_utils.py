@@ -65,8 +65,9 @@ def test_load_var(random_arr, tmp_file):
 def test_tmd_to_morphio():
     """Testing the conversion from MorphIO to TMD and the inverse
     NB: Pay attention to the points duplicated by the MorphIO method"""
-    morphio_neuron = nm.load_morphology("tests/data/L5/UPC/random7.swc")
-    tmd_new_neuron = morphoclass.utils.from_morphio_to_tmd(morphio_neuron)
+    neurom_neuron = nm.load_morphology("tests/data/L5/UPC/random7.swc")
+    morphio_neuron = neurom_neuron.to_morphio()
+    tmd_new_neuron = morphoclass.utils.from_morphio_to_tmd(neurom_neuron)
     morphio_new_neuron = morphoclass.utils.from_tmd_to_morphio(tmd_new_neuron)
     assert len(morphio_neuron.root_sections) == len(morphio_new_neuron.root_sections)
     assert len(morphio_neuron.sections) == len(morphio_new_neuron.sections)

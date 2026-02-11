@@ -35,6 +35,7 @@ from morphio import PointLevel
 from morphio import SectionType
 from morphio.mut import Morphology
 from neurom import COLS
+from neurom.core import Morphology as NeuroMorphology
 from sklearn import model_selection
 from tmd.io.io import load_neuron
 from tmd.Neuron import Neuron
@@ -187,7 +188,7 @@ def from_morphio_to_tmd(morphio_neuron, remove_duplicates=False):
     Parameters
     ----------
     morphio_neuron
-        A MorphIO neuron.
+        A MorphIO or NeuroM neuron.
     remove_duplicates : bool
         Whether or not to remove duplicate points at section joints.
 
@@ -196,14 +197,20 @@ def from_morphio_to_tmd(morphio_neuron, remove_duplicates=False):
     tmd_neuron
         A TMD neuron.
     """
+    # Convert NeuroM Morphology to MorphIO if needed
+    if isinstance(morphio_neuron, NeuroMorphology):
+        morphio_neuron = morphio_neuron.to_morphio()
+
     tmd_neuron = Neuron.Neuron()
 
+    # In newer morphio, soma.points only has XYZ, diameters are separate
+    soma_points = morphio_neuron.soma.points
     tmd_neuron.set_soma(
         Soma.Soma(
-            x=morphio_neuron.soma.points[:, COLS.X],
-            y=morphio_neuron.soma.points[:, COLS.Y],
-            z=morphio_neuron.soma.points[:, COLS.Z],
-            d=2 * morphio_neuron.soma.points[:, COLS.R],
+            x=soma_points[:, COLS.X],
+            y=soma_points[:, COLS.Y],
+            z=soma_points[:, COLS.Z],
+            d=morphio_neuron.soma.diameters,  # Already in diameter format
         )
     )
 
