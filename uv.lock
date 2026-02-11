@@ -1178,15 +1178,18 @@ name = "morphoclass"
 version = "0.1.0"
 source = { editable = "." }
 dependencies = [
+    { name = "basedpyright" },
     { name = "cleanlab" },
     { name = "dill" },
     { name = "imbalanced-learn" },
     { name = "marimo" },
     { name = "morphio" },
     { name = "neurom" },
+    { name = "pdbp" },
     { name = "pytest" },
     { name = "pytest-cov" },
     { name = "pytest-mock" },
+    { name = "ruff" },
     { name = "seaborn" },
     { name = "setuptools" },
     { name = "tmd" },
@@ -1212,6 +1215,7 @@ dev = [
 
 [package.metadata]
 requires-dist = [
+    { name = "basedpyright", specifier = ">=1.37.4" },
     { name = "basedpyright", marker = "extra == 'dev'", specifier = ">=1.30.0" },
     { name = "cleanlab", specifier = ">=2.9.0" },
     { name = "dill", specifier = ">=0.4.1" },
@@ -1222,11 +1226,13 @@ requires-dist = [
     { name = "morphio", specifier = ">=3.4.0" },
     { name = "neurom", specifier = ">=4.0.4" },
     { name = "pandas", marker = "extra == 'analysis'", specifier = ">=2.3.1" },
+    { name = "pdbp", specifier = ">=1.8.2" },
     { name = "pdbp", marker = "extra == 'dev'", specifier = ">=1.7.0" },
     { name = "polars", marker = "extra == 'analysis'", specifier = ">=1.19.0" },
     { name = "pytest", specifier = ">=9.0.2" },
     { name = "pytest-cov", specifier = ">=7.0.0" },
     { name = "pytest-mock", specifier = ">=3.15.1" },
+    { name = "ruff", specifier = ">=0.15.0" },
     { name = "ruff", marker = "extra == 'dev'", specifier = ">=0.12.2" },
     { name = "seaborn", specifier = ">=0.13.2" },
     { name = "seaborn", marker = "extra == 'analysis'", specifier = ">=0.13.2" },

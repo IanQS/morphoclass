@@ -12,6 +12,7 @@
 # See the License for the specific language governing permissions and
 # limitations under the License.
 """Implementation of the MorphologyDataset class."""
+
 from __future__ import annotations
 
 import logging
@@ -183,14 +184,13 @@ class MorphologyDataset(Dataset):
         # Either same number of labels as morphologies, or no labels at all
         if labels and len(morph_paths) != len(labels):
             raise ValueError(
-                "The number of labels does not match the number of "
-                f"morphologies: {len(labels)} != {len(morph_paths)}"
+                f"The number of labels does not match the number of morphologies: {len(labels)} != {len(morph_paths)}"
             )
 
         # Load the data
         data = []
         for i, path in enumerate(morph_paths):
-            morphology = nm.load_morphology(str(path))
+            morphology = nm.load_morphology(str(path)).to_morphio()
             if not morphology:
                 raise RuntimeError(f"Failed to load the morphology file {str(path)!r}")
 
@@ -299,10 +299,7 @@ class MorphologyDataset(Dataset):
                 label = f"{directory_layer.name}/{directory_layer_subclass.name}"
                 new_morph_paths = []
                 for path in directory_layer_subclass.iterdir():
-                    if (
-                        ignore_unknown_filetypes
-                        and path.suffix.lower() not in known_extensions
-                    ):
+                    if ignore_unknown_filetypes and path.suffix.lower() not in known_extensions:
                         logger.warning(f"Ignored a non-morphology file: {str(path)!r}")
                         continue
                     new_morph_paths.append(path)

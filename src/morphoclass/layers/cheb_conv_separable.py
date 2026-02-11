@@ -131,12 +131,12 @@ class ChebConvSeparable(MessagePassing):
         norm = deg_inv_sqrt[row] * edge_weight * deg_inv_sqrt[col]
 
         # Compute the laplacian L_norm = 1 - A_norm
-        edge_index, norm = add_self_loops(edge_index=edge_index, edge_weight=-norm, fill_value=1, num_nodes=num_nodes)
+        edge_index, norm = add_self_loops(edge_index=edge_index, edge_attr=-norm, fill_value=1, num_nodes=num_nodes)
 
         # Compute (tilde L)_norm = 2 / lambda_max L_norm - 1
         edge_index, norm = add_self_loops(
             edge_index=edge_index,
-            edge_weight=2.0 / lambda_max * norm,
+            edge_attr=2.0 / lambda_max * norm,
             fill_value=-1,
             num_nodes=num_nodes,
         )

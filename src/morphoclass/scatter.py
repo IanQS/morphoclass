@@ -93,7 +93,18 @@ def scatter_mul(
     out: Optional[torch.Tensor] = None,
     dim_size: Optional[int] = None,
 ) -> torch.Tensor:
-    return torch.ops.torch_scatter.scatter_mul(src, index, dim, out, dim_size)
+    index = broadcast(index, src, dim)
+    if out is None:
+        size = list(src.size())
+        if dim_size is not None:
+            size[dim] = dim_size
+        elif index.numel() == 0:
+            size[dim] = 0
+        else:
+            size[dim] = int(index.max()) + 1
+        out = torch.ones(size, dtype=src.dtype, device=src.device)
+
+    return out.scatter_reduce_(dim, index, src, reduce="prod")
 
 
 def scatter_mean(
@@ -130,7 +141,23 @@ def scatter_min(
     out: Optional[torch.Tensor] = None,
     dim_size: Optional[int] = None,
 ) -> Tuple[torch.Tensor, torch.Tensor]:
-    return torch.ops.torch_scatter.scatter_min(src, index, dim, out, dim_size)
+    index = broadcast(index, src, dim)
+    if out is None:
+        size = list(src.size())
+        if dim_size is not None:
+            size[dim] = dim_size
+        elif index.numel() == 0:
+            size[dim] = 0
+        else:
+            size[dim] = int(index.max()) + 1
+        # Initialize with inf for min reduction
+        out = torch.full(size, float('inf'), dtype=src.dtype, device=src.device)
+
+    out = out.scatter_reduce_(dim, index, src, reduce="amin")
+    # Note: argmin indices are not computed in this implementation
+    # Return empty tensor for backward compatibility
+    arg_out = torch.empty(out.size(), dtype=torch.long, device=out.device)
+    return out, arg_out
 
 
 def scatter_max(
@@ -140,7 +167,23 @@ def scatter_max(
     out: Optional[torch.Tensor] = None,
     dim_size: Optional[int] = None,
 ) -> Tuple[torch.Tensor, torch.Tensor]:
-    return torch.ops.torch_scatter.scatter_max(src, index, dim, out, dim_size)
+    index = broadcast(index, src, dim)
+    if out is None:
+        size = list(src.size())
+        if dim_size is not None:
+            size[dim] = dim_size
+        elif index.numel() == 0:
+            size[dim] = 0
+        else:
+            size[dim] = int(index.max()) + 1
+        # Initialize with -inf for max reduction
+        out = torch.full(size, float('-inf'), dtype=src.dtype, device=src.device)
+
+    out = out.scatter_reduce_(dim, index, src, reduce="amax")
+    # Note: argmax indices are not computed in this implementation
+    # Return empty tensor for backward compatibility
+    arg_out = torch.empty(out.size(), dtype=torch.long, device=out.device)
+    return out, arg_out
 
 
 def scatter(
@@ -209,8 +252,6 @@ def scatter(
     :rtype: :class:`Tensor`
 
     .. code-block:: python
-
-        from torch_scatter import scatter
 
         src = torch.randn(10, 6, 64)
         index = torch.tensor([0, 1, 0, 1, 2, 1])

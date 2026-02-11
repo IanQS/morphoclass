@@ -59,6 +59,7 @@ class MakeCopy:
         new_obj
             A clone of `obj`.
         """
+        exit()
         if torch.is_tensor(obj):
             return obj.clone()
         elif type(obj) is Morphology:
@@ -104,7 +105,6 @@ class MakeCopy:
             for k, v in data.__dict__.items()
             if self.keep_fields is None or k in self.keep_fields
         })
-
         return new_data
 
     def __repr__(self):

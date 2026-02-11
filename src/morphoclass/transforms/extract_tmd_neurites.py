@@ -93,9 +93,9 @@ class ExtractTMDNeurites:
                 root_sections = data.morphology.root_sections
             else:
                 root_sections = []
-                import pdbp
+                # import pdbp
 
-                pdbp.set_trace()
+                # pdbp.set_trace()
                 for sec in data.morphology.root_sections:
                     if sec.type == neurite_type:
                         root_sections.append(sec)

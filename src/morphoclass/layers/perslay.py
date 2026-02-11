@@ -22,7 +22,7 @@ from typing import Callable
 import torch
 import torch.nn as nn
 from torch.nn.parameter import Parameter
-from morphoclass.scatter import scatter_add, scatter_max, scatter_mean
+from morphoclass.scatter import scatter_add, scatter_max, scatter_mean, scatter_softmax, scatter_sum
 
 
 class PointTransformer(nn.Module, abc.ABC):
@@ -251,7 +251,6 @@ class PersLay(nn.Module):
         else:
             raise ValueError(f"Point transformation {self.transformation} is notavailable!")
 
-        self.reduction: Callable
         if self.operation == "mean":
             self.reduction = partial(scatter_mean, dim=0)
         elif self.operation == "max":
