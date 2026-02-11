@@ -23,7 +23,10 @@ import functools
 import logging
 import pathlib
 
+import morphio
+import morphio.mut
 import neurom as nm
+from neurom.core import Morphology as NeuroMorphology
 
 logger = logging.getLogger(__name__)
 
@@ -234,9 +237,15 @@ def has_apicals_filter(data):
     keep : bool
         Whether to keep or not to keep the data object.
     """
+    morphology = data.morphology
+    # Convert morphio objects to neurom.Morphology if needed
+    if not isinstance(morphology, NeuroMorphology):
+        if isinstance(morphology, (morphio.Morphology, morphio.mut.Morphology)):
+            morphology = NeuroMorphology(morphology)
+
     if any(
         neurite.type == nm.NeuriteType.apical_dendrite
-        for neurite in data.morphology.neurites
+        for neurite in morphology.neurites
     ):
         return True
     return False

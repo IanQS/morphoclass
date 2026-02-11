@@ -18,6 +18,7 @@ from __future__ import annotations
 from copy import copy
 from copy import deepcopy
 
+import morphio
 import torch
 from morphio.mut import Morphology
 
@@ -39,7 +40,13 @@ class MakeCopy:
     """
 
     def __init__(self, keep_fields=None):
-        self.keep_fields = keep_fields
+        # Normalize keep_fields to a set for consistent membership testing
+        if keep_fields is None:
+            self.keep_fields = None
+        elif isinstance(keep_fields, str):
+            self.keep_fields = {keep_fields}
+        else:
+            self.keep_fields = set(keep_fields)
 
     @classmethod
     def clone_obj(cls, key, obj):
@@ -59,12 +66,16 @@ class MakeCopy:
         new_obj
             A clone of `obj`.
         """
-        exit()
         if torch.is_tensor(obj):
             return obj.clone()
         elif type(obj) is Morphology:
+            # morphio.mut.Morphology (mutable)
             return Morphology(obj)
+        elif isinstance(obj, morphio.Morphology):
+            # morphio._morphio.Morphology (immutable) - convert to neurom for compatibility
+            return Neuron(obj)
         elif type(obj) is Neuron:
+            # neurom.core.Morphology
             return Neuron(obj)
         elif type(obj) in [list, tuple, set, frozenset]:
             return type(obj)(cls.clone_obj(None, x) for x in obj)
@@ -100,9 +111,18 @@ class MakeCopy:
         data
             A copy of the input morphology data sample.
         """
+        # In newer PyTorch Geometric, data attributes are stored in data._store
+        # Use the internal _store to access all data attributes
+        if hasattr(data, '_store'):
+            # Modern PyTorch Geometric with _store
+            items = data._store.items()
+        else:
+            # Fallback for older versions
+            items = data.__dict__.items()
+
         new_data = MorphologyData.from_dict({
             k: self.clone_obj(k, v)
-            for k, v in data.__dict__.items()
+            for k, v in items
             if self.keep_fields is None or k in self.keep_fields
         })
         return new_data

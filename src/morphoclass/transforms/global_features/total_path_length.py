@@ -16,8 +16,10 @@ from __future__ import annotations
 
 from queue import Queue
 
+import morphio
 import neurom as nm
 import numpy as np
+from neurom.core import Morphology as NeuroMorphology
 from neurom.core.types import NeuriteType
 
 from morphoclass.transforms.global_features.abstract_global_feature_extractor import (
@@ -52,9 +54,14 @@ class TotalPathLength(AbstractGlobalFeatureExtractor):
         """
         if self.from_morphology:
             neuron = data.morphology
-            total_path_length = nm.get(
+            # Convert morphio.Morphology to neurom.Morphology if needed
+            if isinstance(neuron, morphio.Morphology) and not isinstance(neuron, NeuroMorphology):
+                neuron = NeuroMorphology(neuron)
+            result = nm.get(
                 "total_length", neuron, neurite_type=NeuriteType.apical_dendrite
-            ).sum()
+            )
+            # Handle both scalar and array returns (neurom API change)
+            total_path_length = result.sum() if hasattr(result, 'sum') else result
         else:
             total_path_length = 0
             for apical in data.tmd_neurites:
