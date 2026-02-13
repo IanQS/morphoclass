@@ -41,8 +41,8 @@ analysis = [
 ]
 
 [tool.basedpyright]
-include = ["src/coriander_net/**"]
-exclude = ["src/coriander_net.egg-info"]
+include = ["src/morphoclass/**"]
+exclude = ["src/morphoclass.egg-info"]
 
 [build-system]
 requires = ["setuptools>=61.0", "wheel"]
@@ -50,4 +50,4 @@ build-backend = "setuptools.build_meta"
 
 [tool.setuptools.packages.find]
 where = ["src"]
-include = ["coriander_net*"]
+include = ["morphoclass*"]
