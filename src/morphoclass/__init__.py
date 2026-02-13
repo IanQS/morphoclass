@@ -14,4 +14,5 @@
 """MorphoClass - a package for neuron m-type classification using ML."""
 from __future__ import annotations
 
-from morphoclass.version import __version__  # noqa
+from importlib.metadata import version as _version
+__version__ = _version("morphoclass")
