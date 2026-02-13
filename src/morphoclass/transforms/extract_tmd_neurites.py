@@ -12,6 +12,7 @@
 # See the License for the specific language governing permissions and
 # limitations under the License.
 """Extract TMD neurites."""
+
 from __future__ import annotations
 
 import pathlib
@@ -56,10 +57,7 @@ class ExtractTMDNeurites:
 
     def __init__(self, neurite_type, from_tmd_neuron=False):
         if neurite_type not in self.morphio_types:
-            raise ValueError(
-                f"Unknown neurite type: {neurite_type!r}. "
-                f"Possible values are {set(self.morphio_types)}"
-            )
+            raise ValueError(f"Unknown neurite type: {neurite_type!r}. Possible values are {set(self.morphio_types)}")
         self.neurite_type = neurite_type
         self.from_tmd_neuron = from_tmd_neuron
 
@@ -95,6 +93,9 @@ class ExtractTMDNeurites:
                 root_sections = data.morphology.root_sections
             else:
                 root_sections = []
+                # import pdbp
+
+                # pdbp.set_trace()
                 for sec in data.morphology.root_sections:
                     if sec.type == neurite_type:
                         root_sections.append(sec)
@@ -117,7 +118,4 @@ class ExtractTMDNeurites:
 
     def __repr__(self):
         """Representation of the ExtractTMDNeurites class."""
-        return (
-            f"{self.__class__.__name__}(neurite_type={self.neurite_type},"
-            f"from_tmd_neuron={self.from_tmd_neuron})"
-        )
+        return f"{self.__class__.__name__}(neurite_type={self.neurite_type},from_tmd_neuron={self.from_tmd_neuron})"

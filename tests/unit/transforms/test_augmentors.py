@@ -277,7 +277,14 @@ def test_apply_node_reduction_mask():
     for data in dataset:
         intermediate_pts = data.x.detach().cpu().squeeze().numpy()
         branching_points = 1 - intermediate_pts
-        data.tmd_neurites_masks = [branching_points.astype(bool)]
+        # Split mask per neurite
+        masks = []
+        offset = 0
+        for neurite in data.tmd_neurites:
+            neurite_size = len(neurite.x)
+            masks.append(branching_points[offset:offset+neurite_size].astype(bool))
+            offset += neurite_size
+        data.tmd_neurites_masks = masks
 
     dataset.transform = Compose(
         [

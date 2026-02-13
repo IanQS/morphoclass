@@ -12,6 +12,7 @@
 # See the License for the specific language governing permissions and
 # limitations under the License.
 """Implementation of the training log."""
+
 from __future__ import annotations
 
 import dataclasses
@@ -61,9 +62,7 @@ class TrainingLog:
         if self.config.checkpoint_path_pretrained is None:
             return None
         if self.pretraining_log_ is None:
-            self.pretraining_log_ = TrainingLog.load(
-                self.config.checkpoint_path_pretrained
-            )
+            self.pretraining_log_ = TrainingLog.load(self.config.checkpoint_path_pretrained)
 
         return self.pretraining_log_
 

@@ -31,14 +31,16 @@ class TestMorphologyData:
         data = MorphologyData()
 
         # If data.num_nodes was not set, then it shouldn't be serialised
-        assert not hasattr(data, "__num_nodes__")
+        # In newer PyTorch Geometric, num_nodes is stored directly, not as __num_nodes__
         assert "num_nodes" not in data.to_dict()
 
         # After explicitly setting num_nodes it should be properly serialised
         data.num_nodes = 35
-        assert hasattr(data, "__num_nodes__")
-        loaded_data = MorphologyData.from_dict(data.to_dict())
-        assert hasattr(loaded_data, "__num_nodes__")
+        assert data.num_nodes == 35
+        serialized = data.to_dict()
+        assert "num_nodes" in serialized
+        loaded_data = MorphologyData.from_dict(serialized)
+        assert loaded_data.num_nodes == 35
 
 
 class TestMorphologyDataset:

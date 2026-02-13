@@ -53,8 +53,10 @@ def test_add_one_hot_labels(dataset):
         assert sample.y_oh.size() == (1, 10)
 
     # Test missing y argument in Data
-    for sample in dataset:
-        delattr(sample, "y")
+    # Need to delete from the stored data, not just the returned samples
+    for i in range(len(dataset)):
+        if hasattr(dataset.data[i], 'y'):
+            delattr(dataset.data[i], 'y')
 
     for i in range(len(dataset)):
         with pytest.raises(ValueError):

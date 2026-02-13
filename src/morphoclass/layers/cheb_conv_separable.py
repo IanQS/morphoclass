@@ -12,6 +12,7 @@
 # See the License for the specific language governing permissions and
 # limitations under the License.
 """Implementation of the ChebConvSeparable layer."""
+
 from __future__ import annotations
 
 import torch
@@ -21,7 +22,8 @@ from torch_geometric.nn.inits import glorot
 from torch_geometric.nn.inits import zeros
 from torch_geometric.utils import add_self_loops
 from torch_geometric.utils import remove_self_loops
-from torch_scatter import scatter_add
+
+from morphoclass.scatter import scatter_add
 
 
 class ChebConvSeparable(MessagePassing):
@@ -117,9 +119,7 @@ class ChebConvSeparable(MessagePassing):
         edge_index, edge_weight = remove_self_loops(edge_index, edge_weight)
 
         if edge_weight is None:
-            edge_weight = torch.ones(
-                (edge_index.size(1),), dtype=dtype, device=edge_index.device
-            )
+            edge_weight = torch.ones((edge_index.size(1),), dtype=dtype, device=edge_index.device)
 
         row, col = edge_index
         deg = scatter_add(edge_weight, row, dim=0, dim_size=num_nodes)
@@ -131,14 +131,12 @@ class ChebConvSeparable(MessagePassing):
         norm = deg_inv_sqrt[row] * edge_weight * deg_inv_sqrt[col]
 
         # Compute the laplacian L_norm = 1 - A_norm
-        edge_index, norm = add_self_loops(
-            edge_index=edge_index, edge_weight=-norm, fill_value=1, num_nodes=num_nodes
-        )
+        edge_index, norm = add_self_loops(edge_index=edge_index, edge_attr=-norm, fill_value=1, num_nodes=num_nodes)
 
         # Compute (tilde L)_norm = 2 / lambda_max L_norm - 1
         edge_index, norm = add_self_loops(
             edge_index=edge_index,
-            edge_weight=2.0 / lambda_max * norm,
+            edge_attr=2.0 / lambda_max * norm,
             fill_value=-1,
             num_nodes=num_nodes,
         )
@@ -167,9 +165,7 @@ class ChebConvSeparable(MessagePassing):
         out : torch.Tensor
             The output feature maps.
         """
-        edge_index, norm = self.norm(
-            edge_index, x.size(0), edge_weight, x.dtype, lambda_max=lambda_max
-        )
+        edge_index, norm = self.norm(edge_index, x.size(0), edge_weight, x.dtype, lambda_max=lambda_max)
 
         # Space-wise convolution
         weight_idx = dict(zip(self.orders, range(len(self.orders))))
@@ -217,9 +213,4 @@ class ChebConvSeparable(MessagePassing):
 
     def __repr__(self):
         """Compute the repr of the object."""
-        return (
-            f"{self.__class__.__qualname__}("
-            f"{self.in_channels}, "
-            f"{self.out_channels}, "
-            f"K={self.weight.size(0)})"
-        )
+        return f"{self.__class__.__qualname__}({self.in_channels}, {self.out_channels}, K={self.weight.size(0)})"

@@ -53,7 +53,9 @@ def require_field(field_name):
     def check_field_decorator(call):
         @functools.wraps(call)
         def call_with_check(self, data):
-            if not hasattr(data, field_name):
+            # Check both existence and that value is not None
+            # (PyTorch Geometric may set deleted attrs to None)
+            if not hasattr(data, field_name) or getattr(data, field_name, None) is None:
                 raise_no_attribute(field_name)
             return call(self, data)
 

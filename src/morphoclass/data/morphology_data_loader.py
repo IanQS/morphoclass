@@ -12,6 +12,7 @@
 # See the License for the specific language governing permissions and
 # limitations under the License.
 """Morphology data loader."""
+
 from __future__ import annotations
 
 import functools
@@ -77,7 +78,7 @@ def _collate_fn(data_list, follow_batch):
     # Step 1: collect all data fields that will be batched
     keys: set[str] = set()
     for data in data_list:
-        keys = keys.union(data.keys)
+        keys = keys | set(data.keys())
 
     if "batch" in keys:
         raise ValueError("Trying to batch data that is already batched.")
@@ -107,13 +108,9 @@ def _collate_fn(data_list, follow_batch):
     # concatenation
     batch.batch = []
     for i, data in enumerate(data_list):  # Enumerate samples
-        for key in data.keys:  # Iterate keys in sample
+        for key in data.keys():  # Iterate keys in sample
             # Ignore keys which cannot be collated
-            if not (
-                torch.is_tensor(data[key])
-                or isinstance(data[key], int)
-                or isinstance(data[key], float)
-            ):
+            if not (torch.is_tensor(data[key]) or isinstance(data[key], int) or isinstance(data[key], float)):
                 continue
 
             # Convert numpy arrays to torch tensors
@@ -158,7 +155,7 @@ def _collate_fn(data_list, follow_batch):
         batch.batch = None
 
     # Cat lists of tensors / ints / floats into tensors
-    for key in batch.keys:
+    for key in batch.keys():
         # Remove keys for which no data was collected
         if key.startswith("__") or len(batch[key]) == 0:
             batch[key] = None

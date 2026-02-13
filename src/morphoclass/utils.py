@@ -12,6 +12,7 @@
 # See the License for the specific language governing permissions and
 # limitations under the License.
 """Miscellaneous utilities."""
+
 from __future__ import annotations
 
 import contextlib
@@ -26,13 +27,15 @@ from contextlib import contextmanager
 import dill
 import networkx as nx
 import numpy as np
-import pkg_resources
+
+# import pkg_resources
 import scipy.sparse
 import torch
 from morphio import PointLevel
 from morphio import SectionType
 from morphio.mut import Morphology
 from neurom import COLS
+from neurom.core import Morphology as NeuroMorphology
 from sklearn import model_selection
 from tmd.io.io import load_neuron
 from tmd.Neuron import Neuron
@@ -128,10 +131,7 @@ def save_var(var, file_name, exist_ok=False):
         File already exists.
     """
     if not exist_ok and os.path.exists(file_name):
-        raise FileExistsError(
-            f'File "{file_name}" already exits, set parameter '
-            '"exist_ok" to True to overwrite it'
-        )
+        raise FileExistsError(f'File "{file_name}" already exits, set parameter "exist_ok" to True to overwrite it')
 
     with open(file_name, "wb") as handle:
         dill.dump(var, handle, protocol=dill.HIGHEST_PROTOCOL)
@@ -176,14 +176,10 @@ def from_morphio(root_section):
             parent_id = counter
             counter += 1
             if i == 0:
-                parent_id = (
-                    -1 if section.is_root else section_last_point_id[section.parent.id]
-                )
+                parent_id = -1 if section.is_root else section_last_point_id[section.parent.id]
             parents.append(parent_id)
         section_last_point_id[section.id] = counter
-    return Tree.Tree(
-        points[:, 0], points[:, 1], points[:, 2], diameters, types, parents
-    )
+    return Tree.Tree(points[:, 0], points[:, 1], points[:, 2], diameters, types, parents)
 
 
 def from_morphio_to_tmd(morphio_neuron, remove_duplicates=False):
@@ -192,7 +188,7 @@ def from_morphio_to_tmd(morphio_neuron, remove_duplicates=False):
     Parameters
     ----------
     morphio_neuron
-        A MorphIO neuron.
+        A MorphIO or NeuroM neuron.
     remove_duplicates : bool
         Whether or not to remove duplicate points at section joints.
 
@@ -201,22 +197,26 @@ def from_morphio_to_tmd(morphio_neuron, remove_duplicates=False):
     tmd_neuron
         A TMD neuron.
     """
+    # Convert NeuroM Morphology to MorphIO if needed
+    if isinstance(morphio_neuron, NeuroMorphology):
+        morphio_neuron = morphio_neuron.to_morphio()
+
     tmd_neuron = Neuron.Neuron()
 
+    # In newer morphio, soma.points only has XYZ, diameters are separate
+    soma_points = morphio_neuron.soma.points
     tmd_neuron.set_soma(
         Soma.Soma(
-            x=morphio_neuron.soma.points[:, COLS.X],
-            y=morphio_neuron.soma.points[:, COLS.Y],
-            z=morphio_neuron.soma.points[:, COLS.Z],
-            d=2 * morphio_neuron.soma.points[:, COLS.R],
+            x=soma_points[:, COLS.X],
+            y=soma_points[:, COLS.Y],
+            z=soma_points[:, COLS.Z],
+            d=morphio_neuron.soma.diameters,  # Already in diameter format
         )
     )
 
     for root in morphio_neuron.root_sections:
         # tmd_neuron.append_tree(from_morphio(root), td)  # previous version
-        tree = morphio_root_section_to_tmd_tree(
-            root, remove_duplicates=remove_duplicates
-        )
+        tree = morphio_root_section_to_tmd_tree(root, remove_duplicates=remove_duplicates)
         tmd_neuron.append_tree(tree, TREE_TYPE_DICT)
     return tmd_neuron
 
@@ -264,9 +264,7 @@ def from_tmd_to_morphio(tmd_neuron):
     A MorphIO neuron.
     """
     morpho_neuron = Morphology()
-    morpho_neuron.soma.points = np.transpose(
-        [tmd_neuron.soma.x, tmd_neuron.soma.y, tmd_neuron.soma.z]
-    )
+    morpho_neuron.soma.points = np.transpose([tmd_neuron.soma.x, tmd_neuron.soma.y, tmd_neuron.soma.z])
     morpho_neuron.soma.diameters = tmd_neuron.soma.d
 
     branches = []
@@ -274,13 +272,9 @@ def from_tmd_to_morphio(tmd_neuron):
     branches.extend(tmd_neuron.axon)
     branches_type.extend([SectionType.axon for _ in range(len(tmd_neuron.axon))])
     branches.extend(tmd_neuron.basal_dendrite)
-    branches_type.extend(
-        [SectionType.basal_dendrite for _ in range(len(tmd_neuron.basal_dendrite))]
-    )
+    branches_type.extend([SectionType.basal_dendrite for _ in range(len(tmd_neuron.basal_dendrite))])
     branches.extend(tmd_neuron.apical_dendrite)
-    branches_type.extend(
-        [SectionType.apical_dendrite for _ in range(len(tmd_neuron.apical_dendrite))]
-    )
+    branches_type.extend([SectionType.apical_dendrite for _ in range(len(tmd_neuron.apical_dendrite))])
 
     for nb_branch, branch in enumerate(branches):
         beg, end = branch.get_sections_2()
@@ -291,9 +285,7 @@ def from_tmd_to_morphio(tmd_neuron):
                 section.append(
                     morpho_neuron.append_root_section(
                         PointLevel(
-                            np.transpose(
-                                [branch.x[points], branch.y[points], branch.z[points]]
-                            ).tolist(),
+                            np.transpose([branch.x[points], branch.y[points], branch.z[points]]).tolist(),
                             branch.d[points],
                         ),
                         branches_type[nb_branch],
@@ -305,9 +297,7 @@ def from_tmd_to_morphio(tmd_neuron):
                 section.append(
                     section[ind[0][0]].append_section(
                         PointLevel(
-                            np.transpose(
-                                [branch.x[points], branch.y[points], branch.z[points]]
-                            ).tolist(),
+                            np.transpose([branch.x[points], branch.y[points], branch.z[points]]).tolist(),
                             branch.d[points],
                         )
                     )
@@ -410,9 +400,7 @@ def tree_to_graph(tree):
 
     graph = nx.Graph()
     for idx in range(len(tree.p)):
-        graph.add_node(
-            idx, pos=coordinates[idx], pos2d=coordinates[idx, :2], d=tree.d[idx]
-        )
+        graph.add_node(idx, pos=coordinates[idx], pos2d=coordinates[idx, :2], d=tree.d[idx])
 
     for child, parent in enumerate(tree.p):
         if parent != -1:
@@ -502,9 +490,7 @@ def get_stratified_split(dataset, val_size=None, random_state=None):
     """
     all_labels = [data.y for data in dataset]
 
-    sss = model_selection.StratifiedShuffleSplit(
-        test_size=val_size, random_state=random_state
-    )
+    sss = model_selection.StratifiedShuffleSplit(test_size=val_size, random_state=random_state)
     split_gen = sss.split(X=all_labels, y=all_labels)
     train_idx, val_idx = next(split_gen)
 
@@ -566,15 +552,11 @@ def read_apical_from_file(path, label, nodes_features=None, inverted_apical=True
         #       Actually, the whole feature extraction should be implemented
         #       in a more streamlined way as a pipe/chain of transformers
         #       and should be able to treat the general case.
-        radial_distances, adj = _fuse_simplified_bitufted_apicals(
-            *neuron.apical_dendrite
-        )
+        radial_distances, adj = _fuse_simplified_bitufted_apicals(*neuron.apical_dendrite)
         all_features = torch.from_numpy(radial_distances)
         all_features = all_features.to(torch.float32).unsqueeze(dim=1)
     elif len(neuron.apical_dendrite) > 2:
-        raise NotImplementedError(
-            "Handling of more than two apical trees is not supported"
-        )
+        raise NotImplementedError("Handling of more than two apical trees is not supported")
     else:
         tree = neuron.apical_dendrite[0].extract_simplified()
         if isinstance(nodes_features, list):
@@ -587,9 +569,7 @@ def read_apical_from_file(path, label, nodes_features=None, inverted_apical=True
                         if tree.get_point_projection().mean() < 0 and inverted_apical:
                             radial_distances = -radial_distances
 
-                        features = torch.tensor(
-                            radial_distances, dtype=torch.float32
-                        ).unsqueeze(dim=1)
+                        features = torch.tensor(radial_distances, dtype=torch.float32).unsqueeze(dim=1)
 
                     elif node == "coordinates":
                         coordinates = [
@@ -606,15 +586,11 @@ def read_apical_from_file(path, label, nodes_features=None, inverted_apical=True
 
                     elif node == "path_dist":
                         distances = neuron.apical_dendrite[0].get_point_path_distances()
-                        starts_points, ends_points = neuron.apical_dendrite[
-                            0
-                        ].get_sections_2()
+                        starts_points, ends_points = neuron.apical_dendrite[0].get_sections_2()
                         path_lengths = np.zeros([len(ends_points) + 1])
                         path_lengths[0] = distances[0]
                         path_lengths[1:] = distances[ends_points]
-                        features = torch.tensor(
-                            path_lengths, dtype=torch.float32
-                        ).unsqueeze(dim=1)
+                        features = torch.tensor(path_lengths, dtype=torch.float32).unsqueeze(dim=1)
 
                     elif node == "angles":
                         beg, end = tree.get_sections_2()
@@ -625,9 +601,7 @@ def read_apical_from_file(path, label, nodes_features=None, inverted_apical=True
                             v = tree.get_direction_between(beg[(i + 1)], end[(i + 1)])
                             c = np.dot(u, v) / np.linalg.norm(u) / np.linalg.norm(v)
                             angles.append(np.arccos(c))
-                        features = torch.tensor(angles, dtype=torch.float32).unsqueeze(
-                            dim=1
-                        )
+                        features = torch.tensor(angles, dtype=torch.float32).unsqueeze(dim=1)
 
                     if num_node == 0:
                         all_features = features
@@ -641,9 +615,7 @@ def read_apical_from_file(path, label, nodes_features=None, inverted_apical=True
             # negative to indicate that
             if tree.get_point_projection().mean() < 0 and inverted_apical:
                 radial_distances = -radial_distances
-            all_features = torch.tensor(
-                radial_distances, dtype=torch.float32
-            ).unsqueeze(dim=1)
+            all_features = torch.tensor(radial_distances, dtype=torch.float32).unsqueeze(dim=1)
 
         adj = tree.dA
 
@@ -675,9 +647,7 @@ def read_apical_from_file(path, label, nodes_features=None, inverted_apical=True
     return sample
 
 
-def read_layer_neurons_from_dir(
-    data_dir, layer, labels_dic=None, nodes_features=None, inverted_apical=True
-):
+def read_layer_neurons_from_dir(data_dir, layer, labels_dic=None, nodes_features=None, inverted_apical=True):
     """Read all neurons corresponding to a given layer.
 
     Parameters
@@ -706,18 +676,8 @@ def read_layer_neurons_from_dir(
     data_dir = pathlib.Path(data_dir)
     assert data_dir.is_dir(), "The given directory doesn't exist"
     if labels_dic is None:
-        layers = [
-            x.name for x in data_dir.iterdir() if x.name == f"L{layer}" and x.is_dir()
-        ]
-        labels = dict(
-            enumerate(
-                sorted(
-                    f"{layer}/{x.name}"
-                    for layer in layers
-                    for x in (data_dir / layer).iterdir()
-                )
-            )
-        )
+        layers = [x.name for x in data_dir.iterdir() if x.name == f"L{layer}" and x.is_dir()]
+        labels = dict(enumerate(sorted(f"{layer}/{x.name}" for layer in layers for x in (data_dir / layer).iterdir())))
 
     else:
         labels = labels_dic.copy()
@@ -830,10 +790,7 @@ def warn_if_nondeterministic(device):
         device = device.type
 
     if isinstance(device, str) and device.lower() == "cuda":
-        if (
-            torch.backends.cudnn.deterministic is False
-            or torch.backends.cudnn.benchmark is True
-        ):
+        if torch.backends.cudnn.deterministic is False or torch.backends.cudnn.benchmark is True:
             logger.warning("Torch is in a nondeterministic CUDA mode.")
 
 
@@ -979,9 +936,9 @@ def add_metadata(checkpoint):
     """
     this_package, *_ = __name__.partition(".")
     installed_packages = []
-    for item in pkg_resources.working_set:
-        if item.key != this_package:
-            installed_packages.append(f"{item.project_name}=={item.version}")
+    # for item in pkg_resources.working_set:
+    #     if item.key != this_package:
+    #         installed_packages.append(f"{item.project_name}=={item.version}")
     checkpoint["metadata"] = {
         "timestamp": datetime.datetime.today().isoformat(timespec="seconds"),
         "package": this_package,

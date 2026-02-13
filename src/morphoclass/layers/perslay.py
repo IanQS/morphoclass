@@ -12,6 +12,7 @@
 # See the License for the specific language governing permissions and
 # limitations under the License.
 """Implementation of the PersLay layer."""
+
 from __future__ import annotations
 
 import abc
@@ -21,10 +22,7 @@ from typing import Callable
 import torch
 import torch.nn as nn
 from torch.nn.parameter import Parameter
-from torch_scatter import scatter_max
-from torch_scatter import scatter_mean
-from torch_scatter import scatter_softmax
-from torch_scatter import scatter_sum
+from morphoclass.scatter import scatter_add, scatter_max, scatter_mean, scatter_softmax, scatter_sum
 
 
 class PointTransformer(nn.Module, abc.ABC):
@@ -185,10 +183,7 @@ class PointwisePointTransformer(PointTransformer):
 
     def extra_repr(self):
         """Get a string representation of layer parameters."""
-        return (
-            f"hidden_features={self.hidden_features}, "
-            f"out_features={self.out_features}"
-        )
+        return f"hidden_features={self.hidden_features}, out_features={self.out_features}"
 
 
 class PersLay(nn.Module):
@@ -254,24 +249,16 @@ class PersLay(nn.Module):
         elif isinstance(self.transformation, PointTransformer):
             self.point_transformer = self.transformation
         else:
-            raise ValueError(
-                f"Point transformation {self.transformation} is not" f"available!"
-            )
+            raise ValueError(f"Point transformation {self.transformation} is notavailable!")
 
-        self.reduction: Callable
         if self.operation == "mean":
             self.reduction = partial(scatter_mean, dim=0)
         elif self.operation == "max":
-            self.reduction = lambda *args, **kwargs: partial(scatter_max, dim=0)(
-                *args, **kwargs
-            )[0]
+            self.reduction = lambda *args, **kwargs: partial(scatter_max, dim=0)(*args, **kwargs)[0]
         elif self.operation == "sum":
             self.reduction = partial(scatter_sum, dim=0)
         else:
-            raise ValueError(
-                f"Permutation invariant operation {self.operation}"
-                f" is not available!"
-            )
+            raise ValueError(f"Permutation invariant operation {self.operation} is not available!")
 
         if self.weights == "attention":
             self.a_linear = nn.Linear(in_features=2, out_features=1)
@@ -280,11 +267,9 @@ class PersLay(nn.Module):
         elif self.weights == "grid":
             self.n_grid_points = 10
             self.grid_min, self.grid_max = -0.001, 1.001
-            self.w_grid = Parameter(
-                torch.Tensor(self.n_grid_points, self.n_grid_points, 1)
-            )
+            self.w_grid = Parameter(torch.Tensor(self.n_grid_points, self.n_grid_points, 1))
         else:
-            raise ValueError(f"Attention weights {self.weights} are " f"not available!")
+            raise ValueError(f"Attention weights {self.weights} are not available!")
 
         self.reset_parameters()
 
@@ -318,10 +303,6 @@ class PersLay(nn.Module):
                 w_x = torch.tanh(w_x)
                 w_x = scatter_softmax(w_x, point_index, dim=0)
             elif self.weights == "grid":
-                idxs = (
-                    self.n_grid_points
-                    * (input - self.grid_min)
-                    / (self.grid_max - self.grid_min)
-                ).long()
+                idxs = (self.n_grid_points * (input - self.grid_min) / (self.grid_max - self.grid_min)).long()
                 w_x = self.w_grid[idxs[..., 0], idxs[..., 1]]
             return self.reduction(phi_x * w_x, point_index)

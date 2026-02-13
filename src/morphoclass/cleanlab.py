@@ -12,6 +12,7 @@
 # See the License for the specific language governing permissions and
 # limitations under the License.
 """CleanLab analysis of labeled data."""
+
 from __future__ import annotations
 
 import warnings
@@ -80,12 +81,12 @@ def analysis(labels: np.ndarray, probas: np.ndarray) -> tuple[np.ndarray, np.nda
         The self-confidence score of the outliers, shape is (n_bad_labels,).
         The self-confidence is the predicted probability of the true label.
     """
-    from cleanlab.pruning import get_noise_indices
+    from cleanlab.filter import find_label_issues
 
-    label_error_ids = get_noise_indices(
-        s=labels,
-        psx=probas,
-        sorted_index_method="normalized_margin",  # Orders label errors
+    label_error_ids = find_label_issues(
+        labels,
+        probas,
+        return_indices_ranked_by="normalized_margin",  # Orders label errors
     )
     self_confidence = np.array([probas[idx][labels[idx]] for idx in label_error_ids])
 

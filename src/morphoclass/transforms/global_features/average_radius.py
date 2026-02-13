@@ -16,9 +16,11 @@ from __future__ import annotations
 
 from queue import Queue
 
+import morphio
 import neurom as nm
 import numpy as np
 from neurom import COLS
+from neurom.core import Morphology as NeuroMorphology
 from neurom.core.types import NeuriteType
 
 from morphoclass.transforms.global_features.abstract_global_feature_extractor import (
@@ -62,6 +64,9 @@ class AverageRadius(AbstractGlobalFeatureExtractor):
         integrated_radii = 0
         if self.from_morphology:
             neuron = data.morphology
+            # Convert morphio.Morphology to neurom.Morphology if needed
+            if isinstance(neuron, morphio.Morphology) and not isinstance(neuron, NeuroMorphology):
+                neuron = NeuroMorphology(neuron)
 
             def integrated_radius(p1, p2):
                 r = (p1[COLS.R] + p2[COLS.R]) / 2
