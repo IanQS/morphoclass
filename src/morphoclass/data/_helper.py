@@ -23,8 +23,8 @@ import numpy as np
 import scipy.sparse
 from tmd.io.io import load_neuron
 from tmd.io.io import load_population
-from tmd.Topology.analysis import get_average_persistence_image
 from tmd.Topology.methods import get_persistence_diagram
+from tmd.Topology.vectorizations import persistence_image_data
 from tmd.Tree.Tree import Tree
 
 logger = logging.getLogger(__name__)
@@ -147,9 +147,7 @@ def persistence_diagrams_to_persistence_images(persistence_diagrams, xlims=None,
     :param ylims: the y-dimension of the persistence images to create
     :return: an numpy array with the create persistence images
     """
-    return np.array([
-        get_average_persistence_image(diagram, xlims=xlims, ylims=ylims) for diagram in persistence_diagrams
-    ])
+    return np.array([persistence_image_data(diagram, xlims=xlims, ylims=ylims) for diagram in persistence_diagrams])
 
 
 def reduce_tree_to_branching(tree):
