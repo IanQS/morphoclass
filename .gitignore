@@ -45,6 +45,12 @@ htmlcov
 # PRH experiment — generated outputs (never commit)
 outputs/
 
+# Source archives (extracted into repo; originals not needed)
+*.zip
+
+# Stray root-level copy of experiment script
+/00_sanity_checks.py
+
 # PRH experiment — full FlyWire dataset (13 GB, download separately)
 data/fafb/
 
