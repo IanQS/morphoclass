@@ -11,7 +11,7 @@ Outputs:
 
 Run:
   python experiments/fafb_perslay/01_make_dataset.py \
-      --dataset morphoclass/data/fafb_subset/dataset.csv
+      --dataset data/fafb_sample/dataset.csv
 """
 
 import argparse
@@ -167,7 +167,7 @@ def main(dataset_csv: str, n_splits: int = 3, n_seeds: int = 5,
 if __name__ == "__main__":
     parser = argparse.ArgumentParser()
     parser.add_argument("--dataset",
-                        default="morphoclass/data/fafb_subset/dataset.csv")
+                        default="data/fafb_sample/dataset.csv")
     parser.add_argument("--n_splits", type=int, default=3)
     parser.add_argument("--n_seeds",  type=int, default=5)
     parser.add_argument("--min_per_class", type=int, default=8)

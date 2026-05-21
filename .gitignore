@@ -41,3 +41,20 @@ htmlcov
 
 # pyenv file
 .python-version
+
+# PRH experiment — generated outputs (never commit)
+outputs/
+
+# PRH experiment — full FlyWire dataset (13 GB, download separately)
+data/fafb/
+
+# PRH experiment — model binaries and large numpy arrays
+experiments/fafb_perslay/**/*.npz
+experiments/fafb_perslay/**/*.npy
+experiments/fafb_perslay/**/*.pt
+
+# SLURM logs (generated at runtime)
+outputs/fafb/logs/
+
+# Sample data IS committed — do not exclude
+!data/fafb_sample/
