@@ -1,149 +1,122 @@
-<img alt="MorphoClass Banner" src="docs/source/logo/morphoclass-banner.jpg"/>
+# PRH Morphology Validation — FlyWire FAFB
+### Testing the Platonic Representation Hypothesis on Neuron Morphology
 
-# Morphology-Classification
-MorphoClass is a toolbox for neuronal morphologies processing and
-classification using machine learning.
+> **CSE 493G1 · Spring 2026 · University of Washington**
 
-<table>
-    <tr>
-        <td>Documentation</td>
-        <td>
-            <a href="https://morphoclass.readthedocs.io/en/latest/">
-                <img src="https://readthedocs.org/projects/morphoclass/badge/?version=latest" alt="Docs">
-            </a>
-        </td>
-    </tr>
-    <tr>
-        <td>License</td>
-        <td>
-            <a href="https://github.com/BlueBrain/morphoclass/blob/master/LICENSE.txt">
-                <img src="https://img.shields.io/github/license/BlueBrain/morphoclass" alt="License" />
-            </a>
-        </td>
-    </tr>
-    <tr>
-        <td>Static Typing</td>
-        <td>
-            <a href="http://mypy-lang.org/">
-                <img src="http://www.mypy-lang.org/static/mypy_badge.svg" alt="Mypy">
-            </a>
-        </td>
-    </tr>
-    <tr>
-        <td>Code Style</td>
-        <td>
-            <a href="https://github.com/psf/black">
-                <img src="https://img.shields.io/badge/code%20style-black-000000.svg" alt="Black">
-            </a>
-            <a href="https://pycqa.github.io/isort/">
-                <img src="https://img.shields.io/badge/%20imports-isort-%231674b1?style=flat&labelColor=ef8336" alt="Isort">
-            </a>
-            <a href="https://flake8.pycqa.org/">
-                <img src="https://img.shields.io/badge/PEP8-flake8-informational" alt="Pydocstyle">
-            </a>
-        </td>
-    </tr>
-    <tr>
-        <td>CI</td>
-        <td>
-            <a href="https://github.com/BlueBrain/morphoclass/actions/workflows/ci.yaml?query=branch:main">
-                <img src="https://img.shields.io/github/workflow/status/BlueBrain/morphoclass/CI/main" alt="CI Status">
-            </a>
-        </td>
-    </tr>
-</table>
+This repository extends [IanQS/morphoclass](https://github.com/IanQS/morphoclass)
+with a complete experiment pipeline testing whether topological representations of
+neuron morphology converge across independently trained models — a test of the
+[Platonic Representation Hypothesis](https://arxiv.org/abs/2405.07987) (Huh et al. 2024).
 
+---
 
-# Installation
-Clone the repository and set up the virtual environment
-```sh
-git clone git@github.com:BlueBrain/morphoclass.git
-cd morphoclass
-python --version  # should be 3.8
-python -m venv venv
-. venv/bin/activate
+## Quick Start
+
+```bash
+# 1. Install dependencies
+pip install -r experiments/fafb_perslay/requirements.txt
+
+# 2. Place your data
+#    SWC files  →  data/fafb/swc/*.swc
+#    Labels     →  data/fafb/classification.csv
+
+# 3. Run the full pipeline
+python experiments/fafb_perslay/00_sanity_checks.py
+python experiments/fafb_perslay/01_make_dataset.py
+python experiments/fafb_perslay/02_compute_persistence.py
+python experiments/fafb_perslay/03_train_perslay.py
+python experiments/fafb_perslay/04_extract_embeddings.py
+python experiments/fafb_perslay/05_metrics.py
+python experiments/fafb_perslay/06_figures.py
+python experiments/fafb_perslay/07_nblast.py
+python experiments/fafb_perslay/08_cross_representations.py
+python experiments/fafb_perslay/09_subset_sweep.py
+python experiments/fafb_perslay/10_tree_analysis.py
 ```
 
-Install `morphoclass`
-```sh
-./install.sh
+---
+
+## Repository Layout
+
+```
+morphoclass/                        ← upstream library (DO NOT MODIFY)
+│
+experiments/
+└── fafb_perslay/                   ← all experiment code lives here
+    ├── requirements.txt
+    ├── utils.py                    ← shared primitives (SWC, PersLay, CKA, metrics)
+    ├── 00_sanity_checks.py         ← coordinate scale, SWC validity, class balance
+    ├── 01_make_dataset.py          ← CSV + stratified partitions
+    ├── 02_compute_persistence.py   ← SWC → persistence diagrams + morphometrics
+    ├── 03_train_perslay.py         ← 3 partitions × 5 seeds = 15 PersLay models
+    ├── 04_extract_embeddings.py    ← embeddings → outputs/fafb/embeddings/
+    ├── 05_metrics.py               ← CKA, silhouette, kNN Jaccard, RF baseline
+    ├── 06_figures.py               ← Figs 1–4 (UMAP, CKA, silhouette, kNN)
+    ├── 07_nblast.py                ← NBLAST pretrained model (navis)
+    ├── 08_cross_representations.py ← PI-PCA, graph-topology, cross-rep CKA (Fig 5)
+    ├── 09_subset_sweep.py          ← scaling sweep n=16→96 (Fig 6)
+    └── 10_tree_analysis.py         ← decision tree / RF analysis (Fig 7)
+
+outputs/
+└── fafb/
+    ├── data/                       ← dataset.csv, partitions.json, diagrams.npz …
+    ├── models/                     ← perslay_part_*_s*.npz, run_log.csv
+    ├── embeddings/                 ← emb_*.npy, nblast_*.npy, pi_*.npy …
+    ├── metrics/                    ← summary.json, cka_matrix.npy, sweep.json …
+    └── figures/                    ← fig1_*.png … fig7_*.png
 ```
 
-Open the file `docs/build/html/index.html` to view the documentation.
+---
 
-# Examples
-MorphoClass functionalities can be accessed using either a command line
-interface or by importing `morphoclass` as a Python module and using it as a
-library.
+## Data
 
-## Command-Line Interface
-By installing MorphoClass, we get access to a command line interface with a
-main entrypoint `morphoclass` and various sub-commands.
-```sh
-morphoclass --help
-```
-```
-Usage: morphoclass [OPTIONS] COMMAND [ARGS]...
+**FlyWire FAFB** — download from [codex.flywire.ai](https://codex.flywire.ai):
+- `sk_lod1_783_healed.zip` → unzip to `data/fafb/swc/`
+- `classification.csv`    → place at `data/fafb/classification.csv`
 
-  Welcome to the command line application for morphoclass.
+**Validation subset** (96 neurons, 8 classes × 12) included at:
+`data/fafb_subset/` (generated by the subset script in the paper)
 
-  All functionality is provided through respective sub-commands. To learn more
-  about their functionality call the corresponding sub-command with the --help
-  flag to see a detailed description.
+---
 
-Options:
-  ...
+## Key Results (n=96 validation subset)
 
-Commands:
-  ...
-```
+| Representation | Test Acc | Silhouette | CKA vs PersLay | p-value |
+|---|---|---|---|---|
+| **NBLAST-PCA32 ★** | **0.740** | **+0.155** | 0.151 ± 0.011 | <0.001 |
+| Morphometric RF | 0.469 | -0.102 | 0.106 ± 0.009 | <0.001 |
+| PI-PCA32 | 0.406 | +0.003 | **0.508 ± 0.045** | <0.001 |
+| PersLay-PD | 0.305 | -0.069 | — (self) | — |
+| Graph-Topology | 0.240 | -0.175 | 0.040 ± 0.012 | 0.111 n.s. |
 
-For instance, to train a model for classifying neuronal morphologies, we can
-check the help of the corresponding sub-command.
-```sh
-morphoclass train --help
-```
-```
-Usage: morphoclass train [OPTIONS]
+★ Pretrained — zero-shot transfer, no FlyWire label supervision.
 
-  Train a morphology classification model.
+**PersLay internal stability (15 models):**
+- Within-partition CKA: 0.873 ± 0.052 (p < 0.001)
+- Cross-partition CKA: 0.881 ± 0.060 (p < 0.001)
+- Permutation null p95: 0.027
 
-Options:
-  ...
-```
+---
 
-## Python Interface
-MorphoClass is a pure Python package, and can be used as any other module once
-it is installed.
+## Honest Caveats
 
-For instance, we can load a PersLay-based model for morphology classification
-and check its documentation as follows.
-```py
->>> from morphoclass.models.coriander_net import CorianderNet
->>> help(CorianderNet)
-```
-```
-Help on class CorianderNet in module morphoclass.models.coriander_net:
+1. **n=96 is proof-of-concept.** PersLay accuracy is still climbing; quadratic trend
+   predicts ~0.65 at n=783.
+2. **CKA inflation at small n** (Brbić et al. 2026). Within ≈ cross partition at n=96;
+   gap will open at n=783. Use kNN Jaccard as primary reliability metric.
+3. **Cross-architecture CKA requires trained models.** Random-weight Persformer results
+   are not reported. CorianderNet GNN training is the next step.
+4. **NBLAST uses 3D coordinates**, so its high accuracy partly reflects spatial
+   position (brain region) rather than branching topology alone.
 
-class CorianderNet(torch.nn.modules.module.Module)
- |  CorianderNet(n_classes=4, n_features=64, dropout=False)
- |
- |  A PersLay-based neural network for neuron m-type classification.
- |
- |  Parameters
- |  ----------
- ...
-```
+---
 
-# Documentation
-For more examples and details on the installation, development setup, docker,
-the command line interface, and the python API please see the extended
-documentation on https://morphoclass.readthedocs.io
+## References
 
-# Funding & Acknowledgment
-The development of this software was supported by funding to the Blue Brain
-Project, a research center of the École polytechnique fédérale de Lausanne
-(EPFL), from the Swiss government's ETH Board of the Swiss Federal Institutes
-of Technology.
-
-Copyright © 2022-2022 Blue Brain Project/EPFL
+- Huh et al. 2024 — [Platonic Representation Hypothesis](https://arxiv.org/abs/2405.07987)
+- Brbić et al. 2026 — [Aristotelian Representation Hypothesis](https://arxiv.org/abs/2602.14486)
+- Kornblith et al. 2019 — [CKA](https://arxiv.org/abs/1905.00414)
+- Costa et al. 2016 — [NBLAST](https://www.cell.com/neuron/fulltext/S0896-6273(16)30265-3)
+- Carrière et al. 2020 — [PersLay](https://arxiv.org/abs/1904.09378)
+- Dorkenwald et al. 2023 — [FlyWire](https://www.nature.com/articles/s41592-022-01697-0)
+- Kanari et al. 2018 — [TMD](https://link.springer.com/article/10.1007/s12021-017-9341-1)
