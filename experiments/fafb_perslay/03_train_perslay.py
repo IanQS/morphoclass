@@ -44,9 +44,9 @@ OUT.mkdir(parents=True, exist_ok=True)
 LOG_PATH    = OUT / "run_log.csv"
 SEEDS       = [0, 1, 2, 3, 4]
 N_FEATURES  = 32    # PersLay embedding dim — must match downstream CKA code
-N_EPOCHS    = 200
-BATCH_SIZE  = 8
-LR          = 5e-3
+N_EPOCHS    = 500   # sweep: 500 epochs needed for stable convergence
+BATCH_SIZE  = 32    # sweep: bs=8 caused collapse; bs=32 stabilises gradients
+LR          = 5e-4  # sweep best val_acc: lr=5e-4, bs=32, 500ep → val=0.385
 WEIGHT_DECAY = 5e-4
 
 PASS = "\033[92m[PASS]\033[0m"
