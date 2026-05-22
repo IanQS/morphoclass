@@ -1,13 +1,21 @@
 """
 04_extract_embeddings.py
 ========================
-Loads all trained models and collects embeddings + labels into aligned matrices.
+Loads all trained models and collects two embedding types per model:
+
+  emb_part_X_sY.npy    — (N, 32) PersLay feature-extractor output
+  logit_part_X_sY.npy  — (N,  8) log-softmax output (classifier head)
+
+The feature embeddings capture the learned PersLay representation.
+The logit embeddings are used for debiased CKA (feature embeddings have an
+always-positive constraint that inflates CKA regardless of training).
 
 Outputs:
-  outputs/fafb/embeddings/emb_{part_id}_s{seed}.npy   — (N, D) float
-  outputs/fafb/embeddings/labels.npy                  — (N,) int
+  outputs/fafb/embeddings/emb_{part_id}_s{seed}.npy
+  outputs/fafb/embeddings/logit_{part_id}_s{seed}.npy
+  outputs/fafb/embeddings/labels.npy
   outputs/fafb/embeddings/label_names.json
-  outputs/fafb/embeddings/morphometric_emb.npy         — (N, 8) baseline
+  outputs/fafb/embeddings/morphometric_emb.npy
 
 Run:
   python experiments/fafb_perslay/04_extract_embeddings.py
@@ -15,19 +23,58 @@ Run:
 
 import json, sys
 from pathlib import Path
+
 import numpy as np
+import torch
+from torch.utils.data import DataLoader
+from torch_geometric.data import Batch, Data
 
 sys.path.insert(0, str(Path(__file__).parent))
 from utils import load_dataset
+from morphoclass.models import CorianderNet
 
-DATA_CSV  = Path("outputs/fafb/data/dataset.csv")
-MODEL_DIR = Path("outputs/fafb/models")
-OUT       = Path("outputs/fafb/embeddings")
+DATA_CSV     = Path("outputs/fafb/data/dataset.csv")
+DIAGRAMS_NPZ = Path("outputs/fafb/data/diagrams.npz")
+MODEL_DIR    = Path("outputs/fafb/models")
+OUT          = Path("outputs/fafb/embeddings")
 OUT.mkdir(parents=True, exist_ok=True)
 
 PASS = "\033[92m[PASS]\033[0m"
 WARN = "\033[93m[WARN]\033[0m"
 FAIL = "\033[91m[FAIL]\033[0m"
+
+BATCH_SIZE = 32
+
+
+def _collate(data_list):
+    return Batch.from_data_list(data_list, follow_batch=["diagram"])
+
+
+def build_data_objects(diagrams, labels, scale):
+    return [
+        Data(
+            diagram=torch.tensor(d / scale, dtype=torch.float32),
+            y=torch.tensor(int(y), dtype=torch.long),
+            num_nodes=len(d),
+        )
+        for d, y in zip(diagrams, labels)
+    ]
+
+
+def extract_both(model, data_list, device):
+    """Return (feature_emb, logits) each of shape (N, D)."""
+    loader = DataLoader(data_list, batch_size=BATCH_SIZE,
+                        shuffle=False, collate_fn=_collate)
+    feats, logits = [], []
+    model.eval()
+    with torch.no_grad():
+        for batch in loader:
+            batch = batch.to(device)
+            f = model.feature_extractor(batch.diagram, batch.diagram_batch)
+            l = model(batch)           # log-softmax (N, n_classes)
+            feats.append(f.cpu().numpy())
+            logits.append(l.cpu().numpy())
+    return np.vstack(feats), np.vstack(logits)
 
 
 def main():
@@ -35,58 +82,72 @@ def main():
     print("  Extracting and validating embeddings")
     print(f"{'='*60}\n")
 
+    device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
+    print(f"Device: {device}")
+
     samples, label_names = load_dataset(DATA_CSV)
     labels = np.array([s.label_idx for s in samples])
+    n_classes = len(label_names)
 
-    # Save labels and label names once
     np.save(OUT / "labels.npy", labels)
     with open(OUT / "label_names.json", "w") as f:
         json.dump(label_names, f)
-    print(f"{PASS} Labels saved: {len(labels)} neurons, {len(label_names)} classes")
+    print(f"{PASS} Labels saved: {len(labels)} neurons, {n_classes} classes\n")
 
-    # ── Load embeddings from saved model files ────────────────────────────────
-    model_files = sorted(MODEL_DIR.glob("perslay_part_*.npz"))
-    if not model_files:
-        print(f"{FAIL} No model files found in {MODEL_DIR}")
+    # ── Load persistence diagrams for forward pass ────────────────────────────
+    raw = np.load(DIAGRAMS_NPZ, allow_pickle=True)
+    diagrams = [raw[s.path.stem] if s.path.stem in raw
+                else np.array([[0., 1.]], dtype=np.float32) for s in samples]
+    all_pts = np.vstack(diagrams)
+    scale = np.array([[
+        max(abs(all_pts[:, 0].max()), abs(all_pts[:, 0].min())),
+        max(abs(all_pts[:, 1].max()), abs(all_pts[:, 1].min())),
+    ]])
+    data_list = build_data_objects(diagrams, labels, scale)
+
+    # ── Process each trained model ────────────────────────────────────────────
+    pt_files = sorted(MODEL_DIR.glob("perslay_part_*.pt"))
+    if not pt_files:
+        print(f"{FAIL} No .pt model files found in {MODEL_DIR}")
         print("  Run 03_train_perslay.py first")
         return
 
-    print(f"\nFound {len(model_files)} model files:")
-    for mf in model_files:
-        data = np.load(mf, allow_pickle=True)
-        emb  = data["embeddings"]  # (N, D)
-
-        # Parse part/seed from filename
-        stem = mf.stem  # e.g. perslay_part_0_s2
-        parts = stem.split("_")
+    print(f"Found {len(pt_files)} model files:")
+    for pt in pt_files:
+        stem   = pt.stem                        # perslay_part_0_s2
+        parts  = stem.split("_")
         part_id = f"part_{parts[2]}"
-        seed    = int(parts[3][1:])  # s2 → 2
+        seed    = int(parts[3][1:])             # s2 → 2
 
-        out_path = OUT / f"emb_{part_id}_s{seed}.npy"
-        np.save(out_path, emb)
+        model = CorianderNet(n_classes=n_classes, n_features=32).to(device)
+        model.load_state_dict(torch.load(pt, map_location=device, weights_only=True))
 
-        # Basic validation
-        norm_mean = float(np.linalg.norm(emb, axis=1).mean())
-        zero_rows  = int((np.abs(emb).sum(axis=1) == 0).sum())
-        print(f"  {mf.name}: shape={emb.shape}  norm_mean={norm_mean:.2f}  zero_rows={zero_rows}")
+        emb, logit = extract_both(model, data_list, device)
 
+        np.save(OUT / f"emb_{part_id}_s{seed}.npy",   emb)
+        np.save(OUT / f"logit_{part_id}_s{seed}.npy", logit)
+
+        zero_rows = int((np.abs(emb).sum(axis=1) == 0).sum())
+        print(f"  {pt.name}: feat={emb.shape}  logit={logit.shape}  "
+              f"feat_norm={np.linalg.norm(emb, axis=1).mean():.1f}  "
+              f"zero_rows={zero_rows}")
         if zero_rows > len(samples) * 0.1:
-            print(f"  {WARN} Many zero rows — check persistence diagram quality")
+            print(f"  {WARN} Many zero rows — check diagram quality")
 
     # ── Morphometric baseline embedding ──────────────────────────────────────
     morph_path = Path("outputs/fafb/data/morphometrics.npy")
     if morph_path.exists():
         morph = np.load(morph_path)
-        # Standardize features
-        mu = morph.mean(axis=0)
+        mu  = morph.mean(axis=0)
         std = morph.std(axis=0) + 1e-9
-        morph_norm = (morph - mu) / std
-        np.save(OUT / "morphometric_emb.npy", morph_norm)
-        print(f"\n{PASS} Morphometric baseline embedding: shape={morph_norm.shape}")
+        np.save(OUT / "morphometric_emb.npy", (morph - mu) / std)
+        print(f"\n{PASS} Morphometric baseline: shape={morph.shape}")
     else:
-        print(f"\n{WARN} No morphometrics.npy found — run 02_compute_persistence.py first")
+        print(f"\n{WARN} No morphometrics.npy — run 02_compute_persistence.py first")
 
     print(f"\n{PASS} All embeddings in {OUT}/")
+    print(f"  emb_part_*.npy   — 32-dim PersLay features")
+    print(f"  logit_part_*.npy — {n_classes}-dim log-softmax (use for CKA)")
     print(f"Next: python experiments/fafb_perslay/05_metrics.py\n")
 
 

@@ -367,12 +367,12 @@ class PersLayNumpy:
 def debiased_cka(X: np.ndarray, Y: np.ndarray) -> float:
     """
     Debiased Centered Kernel Alignment (Kornblith et al. 2019).
-    X, Y: (n_samples, d) — L2-normalized before gram computation.
+    Uses the linear kernel K = X X^T directly — no row-wise L2-normalisation,
+    which would convert it to a cosine kernel and inflate CKA for always-positive
+    embeddings (e.g. raw PersLay features).
+    X, Y: (n_samples, d) float arrays.
     Returns scalar in [0, 1].
     """
-    X = X / (np.linalg.norm(X, axis=1, keepdims=True) + 1e-9)
-    Y = Y / (np.linalg.norm(Y, axis=1, keepdims=True) + 1e-9)
-
     n = X.shape[0]
     K = X @ X.T
     L = Y @ Y.T

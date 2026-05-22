@@ -4,14 +4,17 @@
 Computes all PRH evaluation metrics across the 15-model ensemble.
 
 Metrics:
-  1. Debiased CKA — pairwise across all model pairs (15×15 matrix)
-  2. Silhouette score — per model, with 500-permutation null
-  3. kNN Jaccard stability — all valid within-partition pairs
+  1. Debiased CKA — pairwise 15×15 on two embedding spaces:
+       feat  emb_part_*.npy   (32-dim PersLay features)
+       logit logit_part_*.npy (8-dim log-softmax; primary CKA metric)
+  2. Silhouette score — per model on feat space, with 500-permutation null
+  3. kNN Jaccard stability — all pairs, feat and logit spaces
   4. Classification accuracy — from run_log.csv vs morphometric baseline
 
 Outputs:
-  outputs/fafb/metrics/cka_matrix.npy       — (N_models, N_models)
-  outputs/fafb/metrics/cka_labels.json      — model labels
+  outputs/fafb/metrics/cka_feat_matrix.npy   — (N_models, N_models) feat CKA
+  outputs/fafb/metrics/cka_logit_matrix.npy  — (N_models, N_models) logit CKA
+  outputs/fafb/metrics/cka_labels.json
   outputs/fafb/metrics/silhouette.csv
   outputs/fafb/metrics/knn_jaccard.csv
   outputs/fafb/metrics/summary.json
@@ -47,23 +50,40 @@ PASS = "\033[92m[PASS]\033[0m"
 WARN = "\033[93m[WARN]\033[0m"
 
 
-def load_all_embeddings():
-    """Load all saved embedding matrices. Returns list of (label, array) pairs."""
-    emb_files = sorted(EMB_DIR.glob("emb_part_*.npy"))
+def load_models(prefix):
+    """Load embedding matrices matching emb_dir/<prefix>_part_*.npy."""
+    files = sorted(EMB_DIR.glob(f"{prefix}_part_*.npy"))
     result = []
-    for f in emb_files:
-        stem = f.stem  # emb_part_0_s2
+    for f in files:
+        stem  = f.stem          # e.g. emb_part_0_s2 or logit_part_0_s2
         parts = stem.split("_")
-        part_id = int(parts[2])
-        seed    = int(parts[3][1:])
-        emb = np.load(f)
+        part_id = int(parts[-3])
+        seed    = int(parts[-1][1:])
         result.append({
-            "label": f"P{part_id}S{seed}",
+            "label":   f"P{part_id}S{seed}",
             "part_id": part_id,
-            "seed": seed,
-            "emb": emb,
+            "seed":    seed,
+            "emb":     np.load(f),
         })
     return result
+
+
+def compute_cka_matrix(models):
+    """Compute pairwise debiased CKA and return (matrix, within, cross arrays)."""
+    n = len(models)
+    mat = np.zeros((n, n))
+    part_ids = np.array([m["part_id"] for m in models])
+    for i in range(n):
+        for j in range(i, n):
+            v = debiased_cka(models[i]["emb"], models[j]["emb"])
+            mat[i, j] = mat[j, i] = v
+        print(f"  Row {i+1}/{n} done")
+    within_mask = part_ids[:, None] == part_ids[None, :]
+    cross_mask  = ~within_mask
+    np.fill_diagonal(within_mask, False)
+    within = mat[within_mask]
+    cross  = mat[cross_mask]
+    return mat, within, cross
 
 
 def main():
@@ -75,79 +95,81 @@ def main():
     with open(EMB_DIR / "label_names.json") as f:
         label_names = json.load(f)
 
-    models = load_all_embeddings()
-    if not models:
+    feat_models  = load_models("emb")
+    logit_models = load_models("logit")
+
+    if not feat_models:
         print(f"No embeddings found in {EMB_DIR}. Run 04_extract_embeddings.py first.")
         return
-    print(f"Loaded {len(models)} model embeddings\n")
+    print(f"Loaded {len(feat_models)} models  "
+          f"(feat={feat_models[0]['emb'].shape[1]}-dim, "
+          f"logit={logit_models[0]['emb'].shape[1]}-dim)\n")
 
-    n_models = len(models)
-    model_labels = [m["label"] for m in models]
+    n_models     = len(feat_models)
+    model_labels = [m["label"] for m in feat_models]
+    part_ids     = np.array([m["part_id"] for m in feat_models])
 
-    # ── 1. Debiased CKA matrix ────────────────────────────────────────────────
-    print("Computing pairwise debiased CKA...")
-    cka_matrix = np.zeros((n_models, n_models))
-
-    for i in range(n_models):
-        for j in range(i, n_models):
-            val = debiased_cka(models[i]["emb"], models[j]["emb"])
-            cka_matrix[i, j] = val
-            cka_matrix[j, i] = val
-        print(f"  Row {i+1}/{n_models} done")
-
-    np.save(OUT / "cka_matrix.npy", cka_matrix)
+    meta = {"labels": model_labels,
+            "part_ids": [m["part_id"] for m in feat_models],
+            "seeds":    [m["seed"]    for m in feat_models]}
     with open(OUT / "cka_labels.json", "w") as f:
-        json.dump({
-            "labels": model_labels,
-            "part_ids": [m["part_id"] for m in models],
-            "seeds": [m["seed"] for m in models],
-        }, f, indent=2)
+        json.dump(meta, f, indent=2)
 
-    # Summarize within vs cross partition
-    part_ids = np.array([m["part_id"] for m in models])
-    within_mask  = part_ids[:, None] == part_ids[None, :]
-    cross_mask   = ~within_mask
-    np.fill_diagonal(within_mask, False)  # exclude diagonal
+    # ── 1a. Debiased CKA — feature space ─────────────────────────────────────
+    print("Computing debiased CKA on feature embeddings (32-dim)...")
+    feat_mat, feat_within, feat_cross = compute_cka_matrix(feat_models)
+    np.save(OUT / "cka_feat_matrix.npy", feat_mat)
+    # keep old filename as alias for figure scripts
+    np.save(OUT / "cka_matrix.npy", feat_mat)
+    print(f"\n{PASS} Feature CKA saved")
+    print(f"  Within-partition: {feat_within.mean():.3f} ± {feat_within.std():.3f}")
+    print(f"  Cross-partition:  {feat_cross.mean():.3f} ± {feat_cross.std():.3f}")
+    print(f"  Note: feat CKA is inflated — PersLay outputs are always non-negative.")
 
-    within_cka = cka_matrix[within_mask]
-    cross_cka  = cka_matrix[cross_mask]
+    # ── 1b. Debiased CKA — logit space ───────────────────────────────────────
+    print(f"\nComputing debiased CKA on logit embeddings ({logit_models[0]['emb'].shape[1]}-dim)...")
+    logit_mat, logit_within, logit_cross = compute_cka_matrix(logit_models)
+    np.save(OUT / "cka_logit_matrix.npy", logit_mat)
+    print(f"\n{PASS} Logit CKA saved  ← primary PRH metric")
+    print(f"  Within-partition: {logit_within.mean():.3f} ± {logit_within.std():.3f}")
+    print(f"  Cross-partition:  {logit_cross.mean():.3f} ± {logit_cross.std():.3f}")
 
-    print(f"\n{PASS} CKA matrix saved")
-    print(f"  Within-partition CKA: {within_cka.mean():.3f} ± {within_cka.std():.3f}")
-    print(f"  Cross-partition  CKA: {cross_cka.mean():.3f} ± {cross_cka.std():.3f}")
-
-    if cross_cka.mean() > 0.5:
-        print(f"  {PASS} Cross-partition CKA > 0.5 — representations converge across data")
+    if logit_cross.mean() > 0.5:
+        print(f"  {PASS} Cross-partition logit CKA > 0.5 — representations converge")
     else:
-        print(f"  {WARN} Cross-partition CKA low — representations may be data-specific")
+        print(f"  {WARN} Cross-partition logit CKA low")
 
-    # ── Permutation null for cross-partition CKA ──────────────────────────────
-    print(f"\nRunning permutation null ({N_PERM} permutations) on first cross-partition pair...")
-    # Take first pair from different partitions
+    # ── Permutation null on logit cross-partition CKA ─────────────────────────
+    print(f"\nPermutation null ({N_PERM} perms) on logit CKA, first cross-partition pair...")
     cross_pairs = [(i, j) for i in range(n_models) for j in range(i+1, n_models)
-                   if models[i]["part_id"] != models[j]["part_id"]]
+                   if feat_models[i]["part_id"] != feat_models[j]["part_id"]]
     if cross_pairs:
-        i0, j0 = cross_pairs[0]
-        null_dist = permutation_cka_null(models[i0]["emb"], models[j0]["emb"],
+        i0, j0   = cross_pairs[0]
+        null_dist = permutation_cka_null(logit_models[i0]["emb"],
+                                          logit_models[j0]["emb"],
                                           n_permutations=N_PERM, seed=0)
-        obs_cka = cka_matrix[i0, j0]
-        p_val = float(np.mean(null_dist >= obs_cka))
-        p95   = float(np.percentile(null_dist, 95))
+        obs_cka = logit_mat[i0, j0]
+        p_val   = float(np.mean(null_dist >= obs_cka))
+        p95     = float(np.percentile(null_dist, 95))
         print(f"  Observed CKA = {obs_cka:.3f}, null p95 = {p95:.3f}, p = {p_val:.4f}")
         if obs_cka > p95:
-            print(f"  {PASS} Observed CKA exceeds null 95th percentile (p={p_val:.4f})")
+            print(f"  {PASS} Logit CKA exceeds null 95th percentile (p={p_val:.4f})")
         else:
-            print(f"  {WARN} CKA does NOT exceed permutation null — not statistically significant")
+            print(f"  {WARN} Logit CKA does NOT exceed permutation null")
     else:
-        print(f"  {WARN} Need >1 partition for cross-partition null test")
+        print(f"  {WARN} Need >1 partition for null test")
         null_dist = np.array([0.0])
         obs_cka, p_val, p95 = 0.0, 1.0, 0.0
+
+    # use logit CKA for downstream summary
+    within_cka = logit_within
+    cross_cka  = logit_cross
 
     # ── 2. Silhouette scores ──────────────────────────────────────────────────
     print(f"\nComputing silhouette scores + permutation nulls...")
     sil_rows = []
 
-    for m in models:
+    for m in feat_models:
         emb = m["emb"]
         # L2-normalize before silhouette
         emb_norm = emb / (np.linalg.norm(emb, axis=1, keepdims=True) + 1e-9)
@@ -218,77 +240,93 @@ def main():
             rf_results.append({"partition": part_num, "rf_accuracy": rf_acc, "rf_f1": rf_f1})
             print(f"  {part_id_str}: RF acc={rf_acc:.3f}, macro-F1={rf_f1:.3f}")
 
-    # ── 3. kNN Jaccard stability ──────────────────────────────────────────────
-    print(f"\nComputing kNN Jaccard stability (k={KNN_K})...")
+    # ── 3. kNN Jaccard stability — feat and logit ─────────────────────────────
+    print(f"\nComputing kNN Jaccard stability (k={KNN_K}) on feat and logit spaces...")
     jaccard_rows = []
 
     for i in range(n_models):
         for j in range(i + 1, n_models):
-            # Only compute within-partition (same neuron sets) — valid Jaccard
-            if models[i]["part_id"] == models[j]["part_id"]:
-                jac = knn_jaccard(models[i]["emb"], models[j]["emb"], k=KNN_K)
-                pair_type = "within_partition"
-            else:
-                # Cross-partition: neurons differ — Jaccard on row-aligned embeddings
-                # is a proxy for structural similarity, not literal neighbor overlap
-                # (note in analysis)
-                jac = knn_jaccard(models[i]["emb"], models[j]["emb"], k=KNN_K)
-                pair_type = "cross_partition"
-
+            pair_type = ("within_partition"
+                         if feat_models[i]["part_id"] == feat_models[j]["part_id"]
+                         else "cross_partition")
+            jac_feat  = knn_jaccard(feat_models[i]["emb"],  feat_models[j]["emb"],  k=KNN_K)
+            jac_logit = knn_jaccard(logit_models[i]["emb"], logit_models[j]["emb"], k=KNN_K)
             jaccard_rows.append({
-                "model_a": models[i]["label"],
-                "model_b": models[j]["label"],
-                "part_a": models[i]["part_id"],
-                "part_b": models[j]["part_id"],
-                "seed_a": models[i]["seed"],
-                "seed_b": models[j]["seed"],
-                "type": pair_type,
-                "jaccard": round(jac, 4),
+                "model_a":     feat_models[i]["label"],
+                "model_b":     feat_models[j]["label"],
+                "part_a":      feat_models[i]["part_id"],
+                "part_b":      feat_models[j]["part_id"],
+                "seed_a":      feat_models[i]["seed"],
+                "seed_b":      feat_models[j]["seed"],
+                "type":        pair_type,
+                "jaccard_feat":  round(jac_feat,  4),
+                "jaccard_logit": round(jac_logit, 4),
             })
 
     jac_df = pd.DataFrame(jaccard_rows)
     jac_df.to_csv(OUT / "knn_jaccard.csv", index=False)
 
-    within = jac_df[jac_df["type"] == "within_partition"]["jaccard"]
-    cross  = jac_df[jac_df["type"] == "cross_partition"]["jaccard"]
-    print(f"{PASS} kNN Jaccard saved")
-    if len(within):
-        print(f"  Within-partition:  {within.mean():.3f} ± {within.std():.3f}")
-    if len(cross):
-        print(f"  Cross-partition:   {cross.mean():.3f} ± {cross.std():.3f}")
-        print(f"  Note: cross-partition Jaccard uses row-aligned embeddings (see analysis notes)")
+    for space in ("feat", "logit"):
+        col = f"jaccard_{space}"
+        within = jac_df[jac_df["type"] == "within_partition"][col]
+        cross  = jac_df[jac_df["type"] == "cross_partition"][col]
+        print(f"{PASS} kNN Jaccard ({space})")
+        if len(within):
+            print(f"  Within-partition:  {within.mean():.3f} ± {within.std():.3f}")
+        if len(cross):
+            print(f"  Cross-partition:   {cross.mean():.3f} ± {cross.std():.3f}")
+
+    within = jac_df[jac_df["type"] == "within_partition"]["jaccard_logit"]
+    cross  = jac_df[jac_df["type"] == "cross_partition"]["jaccard_logit"]
 
     # ── Summary JSON ──────────────────────────────────────────────────────────
+    jac_feat_within  = jac_df[jac_df["type"]=="within_partition"]["jaccard_feat"]
+    jac_feat_cross   = jac_df[jac_df["type"]=="cross_partition"]["jaccard_feat"]
+    jac_logit_within = jac_df[jac_df["type"]=="within_partition"]["jaccard_logit"]
+    jac_logit_cross  = jac_df[jac_df["type"]=="cross_partition"]["jaccard_logit"]
+
     summary = {
-        "n_models": n_models,
+        "n_models":  n_models,
         "n_neurons": int(len(labels)),
         "n_classes": int(len(label_names)),
-        "cka": {
-            "within_partition_mean": round(float(within_cka.mean()), 4),
-            "within_partition_std":  round(float(within_cka.std()),  4),
-            "cross_partition_mean":  round(float(cross_cka.mean()),  4),
-            "cross_partition_std":   round(float(cross_cka.std()),   4),
-            "permutation_null_p95":  round(float(p95),               4),
-            "cross_partition_pvalue":round(float(p_val),             4),
+        "cka_logit": {
+            "note": "Primary PRH metric — logit space avoids always-positive artifact",
+            "within_partition_mean": round(float(logit_within.mean()), 4),
+            "within_partition_std":  round(float(logit_within.std()),  4),
+            "cross_partition_mean":  round(float(logit_cross.mean()),  4),
+            "cross_partition_std":   round(float(logit_cross.std()),   4),
+            "permutation_null_p95":  round(float(p95),                 4),
+            "cross_partition_pvalue":round(float(p_val),               4),
+        },
+        "cka_feat": {
+            "note": "Informational only — inflated by always-positive PersLay outputs",
+            "within_partition_mean": round(float(feat_within.mean()), 4),
+            "within_partition_std":  round(float(feat_within.std()),  4),
+            "cross_partition_mean":  round(float(feat_cross.mean()),  4),
+            "cross_partition_std":   round(float(feat_cross.std()),   4),
         },
         "silhouette": {
-            "perslay_mean":     round(float(sil_df["silhouette"].mean()), 4),
-            "perslay_std":      round(float(sil_df["silhouette"].std()),  4),
+            "perslay_mean":          round(float(sil_df["silhouette"].mean()), 4),
+            "perslay_std":           round(float(sil_df["silhouette"].std()),  4),
             "morphometric_baseline": round(float(morph_sil), 4) if morph_sil else None,
-            "n_significant_models": int(sil_df["significant"].sum()),
+            "n_significant_models":  int(sil_df["significant"].sum()),
         },
-        "knn_jaccard": {
-            "within_partition_mean": round(float(within.mean()), 4) if len(within) else None,
-            "cross_partition_mean":  round(float(cross.mean()),  4) if len(cross)  else None,
+        "knn_jaccard_feat": {
+            "within_partition_mean": round(float(jac_feat_within.mean()), 4) if len(jac_feat_within) else None,
+            "cross_partition_mean":  round(float(jac_feat_cross.mean()),  4) if len(jac_feat_cross)  else None,
+        },
+        "knn_jaccard_logit": {
+            "within_partition_mean": round(float(jac_logit_within.mean()), 4) if len(jac_logit_within) else None,
+            "cross_partition_mean":  round(float(jac_logit_cross.mean()),  4) if len(jac_logit_cross)  else None,
         },
         "rf_baseline": rf_results if rf_results else None,
         "interpretation_notes": [
-            "Cross-partition CKA compares embeddings of different neurons — "
-            "tests geometric similarity of the learned spaces, not point-wise alignment.",
-            "Cross-partition kNN Jaccard is a proxy metric (row-indexed, not neuron-matched). "
-            "For a strict PRH test, use CKA as the primary metric.",
-            "For genuine PRH (Huh et al. 2024) the strongest test is cross-architecture CKA "
-            "(PersLay vs GNN) — add CorianderNet runs to enable this comparison.",
+            "cka_logit is the primary PRH metric. Raw PersLay features are always "
+            "non-negative (Gaussian soft-counts), causing linear-kernel CKA to be "
+            "trivially ~1 for any two models including random initialisations.",
+            "knn_jaccard_logit is the primary kNN metric for the same reason.",
+            "Cross-partition kNN Jaccard on feat/logit uses row-aligned embeddings "
+            "(same 96 neurons, different training sets).",
         ],
     }
     with open(OUT / "summary.json", "w") as f:
@@ -297,11 +335,18 @@ def main():
     print(f"\n{'='*60}")
     print(f"  METRICS SUMMARY")
     print(f"{'='*60}")
-    print(f"  CKA within-partition:  {summary['cka']['within_partition_mean']:.3f} ± {summary['cka']['within_partition_std']:.3f}")
-    print(f"  CKA cross-partition:   {summary['cka']['cross_partition_mean']:.3f} ± {summary['cka']['cross_partition_std']:.3f}")
-    print(f"  Silhouette (PersLay):  {summary['silhouette']['perslay_mean']:.3f} ± {summary['silhouette']['perslay_std']:.3f}")
+    print(f"  CKA logit within-partition: {summary['cka_logit']['within_partition_mean']:.3f} "
+          f"± {summary['cka_logit']['within_partition_std']:.3f}  ← primary")
+    print(f"  CKA logit cross-partition:  {summary['cka_logit']['cross_partition_mean']:.3f} "
+          f"± {summary['cka_logit']['cross_partition_std']:.3f}  ← primary")
+    print(f"  CKA feat  within-partition: {summary['cka_feat']['within_partition_mean']:.3f} "
+          f"± {summary['cka_feat']['within_partition_std']:.3f}  (inflated)")
+    print(f"  CKA feat  cross-partition:  {summary['cka_feat']['cross_partition_mean']:.3f} "
+          f"± {summary['cka_feat']['cross_partition_std']:.3f}  (inflated)")
+    print(f"  Silhouette (PersLay feat):  {summary['silhouette']['perslay_mean']:.3f} "
+          f"± {summary['silhouette']['perslay_std']:.3f}")
     if morph_sil:
-        print(f"  Silhouette (morph RF): {morph_sil:.3f}")
+        print(f"  Silhouette (morph RF):      {morph_sil:.3f}")
     print(f"  Summary → {OUT}/summary.json")
     print(f"  Next: python experiments/fafb_perslay/06_figures.py\n")
 
