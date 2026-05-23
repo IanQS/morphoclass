@@ -57,8 +57,8 @@ def load_models(prefix):
     for f in files:
         stem  = f.stem          # e.g. emb_part_0_s2 or logit_part_0_s2
         parts = stem.split("_")
-        part_id = int(parts[-3])
-        seed    = int(parts[-1][1:])
+        part_id = int(parts[-2])   # '0' in emb_part_0_s2
+        seed    = int(parts[-1][1:])  # 's2' → 2
         result.append({
             "label":   f"P{part_id}S{seed}",
             "part_id": part_id,
