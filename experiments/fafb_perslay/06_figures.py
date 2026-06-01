@@ -166,7 +166,7 @@ def fig1_umap_grid(models, labels, label_names):
 def fig2_cka_heatmap(models):
     print("  Generating Fig 2: CKA heatmap...")
 
-    cka = np.load(MET_DIR / "cka_matrix.npy")
+    cka = np.load(MET_DIR / "cka_logit_matrix.npy")
     with open(MET_DIR / "cka_labels.json") as f:
         meta = json.load(f)
 
@@ -294,11 +294,13 @@ def fig4_knn_stability():
     print("  Generating Fig 4: kNN Jaccard stability...")
 
     jac_df = pd.read_csv(MET_DIR / "knn_jaccard.csv")
+    # column is jaccard_logit (primary) or legacy jaccard
+    jac_col = "jaccard_logit" if "jaccard_logit" in jac_df.columns else "jaccard"
 
     fig, (ax1, ax2) = plt.subplots(1, 2, figsize=(11, 5), facecolor=DARK_BG)
 
-    within = jac_df[jac_df["type"] == "within_partition"]["jaccard"].values
-    cross  = jac_df[jac_df["type"] == "cross_partition"]["jaccard"].values
+    within = jac_df[jac_df["type"] == "within_partition"][jac_col].values
+    cross  = jac_df[jac_df["type"] == "cross_partition"][jac_col].values
 
     for ax, vals, col, label in [
         (ax1, within, "#0B8FAC", "Within-partition\n(same data, diff seed)"),

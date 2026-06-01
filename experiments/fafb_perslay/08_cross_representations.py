@@ -329,7 +329,9 @@ def main():
     with open(PARTS_JSON) as f:
         partitions = json.load(f)
 
-    emb_files = sorted(EMB_DIR.glob("emb_part_*.npy"))
+    # Use logit embeddings (8-dim log-softmax) as the PersLay reference.
+    # Feature embeddings (emb_part_*.npy) are always non-negative → CKA trivially ~1.0.
+    emb_files = sorted(EMB_DIR.glob("logit_part_*.npy"))
 
     # ── PI-PCA32 ──────────────────────────────────────────────────────────────
     pi_path = EMB_DIR / "pi_pca_emb.npy"

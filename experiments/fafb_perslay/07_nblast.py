@@ -19,7 +19,7 @@ Run:
   python experiments/fafb_perslay/07_nblast.py
 """
 
-import sys, json, warnings
+import sys, json, os, warnings
 from pathlib import Path
 import numpy as np
 import pandas as pd
@@ -71,12 +71,14 @@ def compute_nblast(samples, force=False):
     nl_dp = navis.make_dotprops(nl_um, k=5, progress=False)
 
     print("Running NBLAST all-by-all (pretrained Drosophila scoring matrix)...")
+    n_cores = int(os.environ.get("SLURM_CPUS_PER_TASK", 1))
+    print(f"Running NBLAST all-by-all on {n_cores} core(s)...")
     scores_df = navis.nblast_allbyall(
         nl_dp,
         normalized=True,
         use_alpha=True,
-        progress=False,
-        n_cores=1,
+        progress=True,
+        n_cores=n_cores,
     )
     scores = scores_df.values.astype(np.float32)
     print(f"{PASS} NBLAST done: shape={scores.shape}, "

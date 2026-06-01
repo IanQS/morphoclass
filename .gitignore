@@ -62,5 +62,11 @@ experiments/fafb_perslay/**/*.pt
 # SLURM logs (generated at runtime)
 outputs/fafb/logs/
 
-# Sample data IS committed — do not exclude
+# Sample metadata IS committed; SWC binaries are not (regenerate via sample_dataset.py)
 !data/fafb_sample/
+data/fafb_sample/swc/
+
+# Progress report zips (ephemeral)
+progress_report/
+progress_report_*.zip
+outputs/fafb_n*_backup/

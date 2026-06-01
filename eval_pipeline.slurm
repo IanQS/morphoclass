@@ -4,7 +4,7 @@
 #SBATCH --partition=ckpt
 #SBATCH --cpus-per-task=4
 #SBATCH --mem=8G
-#SBATCH --time=00:30:00
+#SBATCH --time=01:00:00
 #SBATCH --output=outputs/fafb/logs/eval_%j.out
 #SBATCH --error=outputs/fafb/logs/eval_%j.err
 
