@@ -200,15 +200,15 @@ def evaluate(model, data_list, indices, batch_size, device):
 
 # ── Training ──────────────────────────────────────────────────────────────────
 
-def pretrain_one(part_id, splits, data_list, all_labels, n_classes, device,
+def pretrain_one(part_id, seed, splits, data_list, all_labels, n_classes, device,
                  writer, log_file):
-    model_path = OUT / f"perslay_pretrain_{part_id}.pt"
+    model_path = OUT / f"perslay_pretrain_{part_id}_s{seed}.pt"
     if model_path.exists():
         print(f"  SKIP (exists): {model_path.name}")
         return
 
-    torch.manual_seed(42)
-    np.random.seed(42)
+    torch.manual_seed(seed)
+    np.random.seed(seed)
 
     train_idx = splits["train"]
     val_idx   = splits["val"]
@@ -220,7 +220,7 @@ def pretrain_one(part_id, splits, data_list, all_labels, n_classes, device,
         data_list, train_idx, all_labels,
         k_per_class=BATCH_SIZE,
         n_batches=n_batches * N_EPOCHS,
-        seed=42,
+        seed=seed,
     )
 
     model     = CorianderNet(n_classes=n_classes, n_features=N_FEATURES).to(device)
@@ -272,6 +272,7 @@ def pretrain_one(part_id, splits, data_list, all_labels, n_classes, device,
                   f"elapsed={elapsed:.0f}s")
             row = {
                 "partition": part_id,
+                "seed":      seed,
                 "epoch":     epoch + 1,
                 "ce_loss":   round(epoch_ce / n_steps, 4),
                 "sc_loss":   round(epoch_sc / n_steps, 4),
@@ -288,7 +289,7 @@ def pretrain_one(part_id, splits, data_list, all_labels, n_classes, device,
 
 # ── Main ──────────────────────────────────────────────────────────────────────
 
-def main(only_partition=None):
+def main(only_partition=None, seeds=(0, 1)):
     device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
     print(f"\n{'='*60}")
     print(f"  CorianderNet contrastive pretraining")
@@ -323,7 +324,7 @@ def main(only_partition=None):
     log_exists = LOG_PATH.exists()
     log_file   = open(LOG_PATH, "a", newline="")
     writer     = csv.DictWriter(log_file, fieldnames=[
-        "partition", "epoch", "ce_loss", "sc_loss", "val_acc", "val_f1", "elapsed_s"
+        "partition", "seed", "epoch", "ce_loss", "sc_loss", "val_acc", "val_f1", "elapsed_s"
     ])
     if not log_exists:
         writer.writeheader()
@@ -331,21 +332,24 @@ def main(only_partition=None):
     for part_id, splits in partitions.items():
         if only_partition and part_id != only_partition:
             continue
-        print(f"\nPretraining {part_id}  "
-              f"(train={len(splits['train'])} val={len(splits['val'])} "
-              f"test={len(splits['test'])} held-out)")
-        pretrain_one(part_id, splits, data_list, all_labels,
-                     n_classes, device, writer, log_file)
+        for seed in seeds:
+            print(f"\nPretraining {part_id} seed={seed}  "
+                  f"(train={len(splits['train'])} val={len(splits['val'])} "
+                  f"test={len(splits['test'])} held-out)")
+            pretrain_one(part_id, seed, splits, data_list, all_labels,
+                         n_classes, device, writer, log_file)
 
     log_file.close()
     print(f"\nPretrain log → {LOG_PATH}")
-    print(f"Models      → {OUT}/perslay_pretrain_part_*.pt")
-    print(f"\nNext: fine-tune with 03_train_perslay.py or run eval directly.")
+    print(f"Models      → {OUT}/perslay_pretrain_part_*_s*.pt")
+    print(f"\nNext: sbatch pretrain_eval.slurm")
 
 
 if __name__ == "__main__":
     parser = argparse.ArgumentParser()
     parser.add_argument("--partition", default=None,
                         help="Run only this partition (e.g. part_0)")
+    parser.add_argument("--seeds", nargs="+", type=int, default=[0, 1],
+                        help="Seeds to run (default: 0 1)")
     args = parser.parse_args()
-    main(args.partition)
+    main(args.partition, args.seeds)

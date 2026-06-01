@@ -64,16 +64,16 @@ FAIL = "\033[91m[FAIL]\033[0m"
 
 # ── Data loading ──────────────────────────────────────────────────────────────
 
-def load_logit_models():
-    files = sorted(EMB_DIR.glob("logit_part_*.npy"))
+def load_logit_models(tag=""):
+    prefix = f"logit_{tag+'_' if tag else ''}"
+    files = sorted(EMB_DIR.glob(f"{prefix}part_*.npy"))
     if not files:
-        print(f"{FAIL} No logit embeddings found. Run 04_extract_embeddings.py first.")
+        flag = f"--tag {tag}" if tag else ""
+        print(f"{FAIL} No logit embeddings found matching '{prefix}part_*.npy'.")
+        print(f"  Run: python 04_extract_embeddings.py {flag}")
         sys.exit(1)
     models = []
     for f in files:
-        parts   = f.stem.split("_")       # logit_part_0_s2
-        part_id = int(parts[-2])
-        seed    = int(parts[-1][1:])
         models.append({
             "label":   f"P{part_id}S{seed}",
             "part_id": part_id,
@@ -427,8 +427,9 @@ def fig_combined(mat, models, within_cka, cross_cka,
              f"Null p95 — see progress_report.json",
              transform=ax5.transAxes, fontsize=7.5, color=MUTED, va="bottom")
 
-    fig.suptitle("PersLay/CorianderNet — PRH Progress Report", color=WHITE, fontsize=13, y=1.01)
-    out = FIG_DIR / "report_combined.png"
+    title_tag = f" [{tag}]" if tag else ""
+    fig.suptitle(f"PersLay/CorianderNet — PRH Progress Report{title_tag}", color=WHITE, fontsize=13, y=1.01)
+    out = FIG_DIR / f"report_combined{suffix}.png"
     plt.savefig(out, dpi=150, bbox_inches="tight", facecolor=DARK_BG)
     plt.close()
     print(f"  → {out}")
@@ -436,12 +437,13 @@ def fig_combined(mat, models, within_cka, cross_cka,
 
 # ── Main ──────────────────────────────────────────────────────────────────────
 
-def main():
+def main(tag=""):
+    label = f"pretrain ({tag})" if tag else "standard"
     print(f"\n{'='*60}")
-    print("  PersLay/CorianderNet Progress Report")
+    print(f"  PersLay/CorianderNet Progress Report  [{label}]")
     print(f"{'='*60}\n")
 
-    models = load_logit_models()
+    models = load_logit_models(tag)
     labels, label_names = load_labels()
     n_neurons, n_classes = len(labels), len(label_names)
     print(f"  {len(models)} models | {n_neurons:,} neurons | {n_classes} classes\n")
@@ -452,9 +454,15 @@ def main():
     np.save(MET_DIR / "report_cka_logit_matrix.npy", cka_mat)
 
     print("\nComputing permutation null (CKA)...")
-    # Use first cross-partition pair for null
-    i0 = next(i for i, m in enumerate(models) if m["part_id"] == 0)
-    j0 = next(j for j, m in enumerate(models) if m["part_id"] == 1)
+    # Use first cross-partition pair if available, else cross-seed
+    part_ids = [m["part_id"] for m in models]
+    cross_pairs = [(i, j) for i in range(len(models))
+                   for j in range(i+1, len(models))
+                   if part_ids[i] != part_ids[j]]
+    same_pairs  = [(i, j) for i in range(len(models))
+                   for j in range(i+1, len(models))
+                   if part_ids[i] == part_ids[j]]
+    i0, j0 = cross_pairs[0] if cross_pairs else same_pairs[0]
     null_dist = permutation_cka_null(models[i0]["emb"], models[j0]["emb"],
                                      n_permutations=N_PERM, seed=42)
     null_p95 = float(np.percentile(null_dist, 95))
@@ -470,8 +478,16 @@ def main():
     print("\nComputing silhouette scores...")
     sil_scores = compute_silhouette(models, labels)
 
-    # ── Accuracy from run log ─────────────────────────────────────────────────
-    df_log = pd.read_csv(LOG_CSV)
+    # ── Accuracy from run log (pretrain log has val only; standard has test) ──
+    pretrain_log = Path("outputs/fafb/models/pretrain_log.csv")
+    log_path = pretrain_log if (tag == "pretrain" and pretrain_log.exists()) else LOG_CSV
+    df_log = pd.read_csv(log_path)
+    if tag == "pretrain":
+        # Pretrain log has one row per epoch; take final epoch per partition/seed
+        df_log = df_log.groupby(["partition", "seed"]).last().reset_index()
+        if "test_acc" not in df_log.columns:
+            df_log["test_acc"] = df_log["val_acc"]
+            df_log["test_f1"]  = df_log.get("val_f1", df_log["val_acc"])
 
     # ── Figures ───────────────────────────────────────────────────────────────
     print("\nGenerating figures...")
@@ -514,7 +530,8 @@ def main():
             "f1_std":    round(float(df_log.test_f1.std()),   4),
         },
     }
-    out_json = MET_DIR / "progress_report.json"
+    suffix   = f"_{tag}" if tag else ""
+    out_json = MET_DIR / f"progress_report{suffix}.json"
     with open(out_json, "w") as f:
         json.dump(report, f, indent=2)
     print(f"\n  Summary → {out_json}")
@@ -534,4 +551,9 @@ def main():
 
 
 if __name__ == "__main__":
-    main()
+    import argparse
+    parser = argparse.ArgumentParser()
+    parser.add_argument("--tag", default="",
+                        help="Embedding tag: '' for standard, 'pretrain' for contrastive pretrain")
+    args = parser.parse_args()
+    main(args.tag)

@@ -21,7 +21,7 @@ Run:
   python experiments/fafb_perslay/04_extract_embeddings.py
 """
 
-import json, sys
+import argparse, json, re, sys
 from pathlib import Path
 
 import numpy as np
@@ -77,9 +77,17 @@ def extract_both(model, data_list, device):
     return np.vstack(feats), np.vstack(logits)
 
 
-def main():
+def main(tag=""):
+    """
+    tag: "" for standard perslay_part_*.pt models → emb_part_*_sN.npy
+         "pretrain" for perslay_pretrain_part_*.pt → emb_pretrain_part_*_sN.npy
+    """
+    model_glob  = f"perslay_{tag+'_' if tag else ''}part_*.pt"
+    emb_prefix  = f"{tag+'_' if tag else ''}"
+
     print(f"\n{'='*60}")
-    print("  Extracting and validating embeddings")
+    print(f"  Extracting and validating embeddings  (tag={tag or 'standard'})")
+    print(f"  Model glob:  {model_glob}")
     print(f"{'='*60}\n")
 
     device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
@@ -106,26 +114,31 @@ def main():
     data_list = build_data_objects(diagrams, labels, scale)
 
     # ── Process each trained model ────────────────────────────────────────────
-    pt_files = sorted(MODEL_DIR.glob("perslay_part_*.pt"))
+    pt_files = sorted(MODEL_DIR.glob(model_glob))
     if not pt_files:
-        print(f"{FAIL} No .pt model files found in {MODEL_DIR}")
-        print("  Run 03_train_perslay.py first")
+        print(f"{FAIL} No .pt model files matching '{model_glob}' in {MODEL_DIR}")
+        script = "13_pretrain_contrastive.py" if tag == "pretrain" else "03_train_perslay.py"
+        print(f"  Run {script} first")
         return
 
     print(f"Found {len(pt_files)} model files:")
     for pt in pt_files:
-        stem   = pt.stem                        # perslay_part_0_s2
-        parts  = stem.split("_")
-        part_id = f"part_{parts[2]}"
-        seed    = int(parts[3][1:])             # s2 → 2
+        # Robust parser: extract part number and seed via regex
+        # handles both perslay_part_0_s2 and perslay_pretrain_part_0_s2
+        m = re.search(r'part_(\d+)_s(\d+)', pt.stem)
+        if not m:
+            print(f"  {WARN} Cannot parse part/seed from {pt.name} — skipping")
+            continue
+        part_id = f"part_{m.group(1)}"
+        seed    = int(m.group(2))
 
         model = CorianderNet(n_classes=n_classes, n_features=32).to(device)
         model.load_state_dict(torch.load(pt, map_location=device, weights_only=True))
 
         emb, logit = extract_both(model, data_list, device)
 
-        np.save(OUT / f"emb_{part_id}_s{seed}.npy",   emb)
-        np.save(OUT / f"logit_{part_id}_s{seed}.npy", logit)
+        np.save(OUT / f"emb_{emb_prefix}{part_id}_s{seed}.npy",   emb)
+        np.save(OUT / f"logit_{emb_prefix}{part_id}_s{seed}.npy", logit)
 
         zero_rows = int((np.abs(emb).sum(axis=1) == 0).sum())
         print(f"  {pt.name}: feat={emb.shape}  logit={logit.shape}  "
@@ -145,11 +158,18 @@ def main():
     else:
         print(f"\n{WARN} No morphometrics.npy — run 02_compute_persistence.py first")
 
+    next_step = "12_progress_report.py --tag pretrain" if tag == "pretrain" \
+                else "05_metrics.py"
     print(f"\n{PASS} All embeddings in {OUT}/")
-    print(f"  emb_part_*.npy   — 32-dim PersLay features")
-    print(f"  logit_part_*.npy — {n_classes}-dim log-softmax (use for CKA)")
-    print(f"Next: python experiments/fafb_perslay/05_metrics.py\n")
+    print(f"  emb_{emb_prefix}part_*.npy   — 32-dim PersLay features")
+    print(f"  logit_{emb_prefix}part_*.npy — {n_classes}-dim log-softmax (use for CKA)")
+    print(f"Next: python experiments/fafb_perslay/{next_step}\n")
 
 
 if __name__ == "__main__":
-    main()
+    parser = argparse.ArgumentParser()
+    parser.add_argument("--tag", default="",
+                        help="Model tag: '' for standard perslay_part_*.pt, "
+                             "'pretrain' for perslay_pretrain_part_*.pt")
+    args = parser.parse_args()
+    main(args.tag)

@@ -17,8 +17,8 @@
 #   PREP=$(sbatch --parsable prep_data.slurm)
 #   sbatch --dependency=afterok:$PREP pretrain_contrastive.slurm
 #
-# Or to pretrain a single partition:
-#   sbatch --export=ALL,PARTITION=part_0 pretrain_contrastive.slurm
+# Override partition and seeds via environment:
+#   sbatch --export=ALL,PARTITION=part_0,SEEDS="0 1" pretrain_contrastive.slurm
 
 set -euo pipefail
 
@@ -36,11 +36,10 @@ PYTHON=${PYTHON:-/gscratch/scrubbed/emazuh/morphoclass/bin/python}
     '|', torch.cuda.get_device_name(0) if torch.cuda.is_available() else 'CPU only')"
 
 echo "--- Contrastive pretraining (SupCon + CE) ---"
-if [[ -n "${PARTITION:-}" ]]; then
-    "$PYTHON" experiments/fafb_perslay/13_pretrain_contrastive.py --partition "$PARTITION"
-else
-    "$PYTHON" experiments/fafb_perslay/13_pretrain_contrastive.py
-fi
+ARGS=""
+[[ -n "${PARTITION:-}" ]] && ARGS="$ARGS --partition $PARTITION"
+[[ -n "${SEEDS:-}" ]]     && ARGS="$ARGS --seeds $SEEDS"
+"$PYTHON" experiments/fafb_perslay/13_pretrain_contrastive.py $ARGS
 
 echo "Finished: $(date)"
 echo "Models → outputs/fafb/models/perslay_pretrain_part_*.pt"
