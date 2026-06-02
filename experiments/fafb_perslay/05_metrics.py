@@ -43,8 +43,9 @@ OUT.mkdir(parents=True, exist_ok=True)
 
 PASS = "\033[92m[PASS]\033[0m"
 WARN = "\033[93m[WARN]\033[0m"
-N_PERM = 500   # permutations for null distribution (500 is fast; use 1000 for paper)
-KNN_K  = 5     # k for Jaccard (use 10 for larger dataset)
+N_PERM   = 500    # permutations for null distribution (500 is fast; use 1000 for paper)
+KNN_K    = 5      # k for Jaccard (use 10 for larger dataset)
+CKA_MAX_N = 4000  # stratified subsample for O(N²) ops — set to None to disable
 
 PASS = "\033[92m[PASS]\033[0m"
 WARN = "\033[93m[WARN]\033[0m"
@@ -86,6 +87,24 @@ def compute_cka_matrix(models):
     return mat, within, cross
 
 
+def subsample(models, labels, max_n, seed=42):
+    """Stratified subsample to max_n for O(N²) ops (CKA, kNN)."""
+    n = len(labels)
+    if max_n is None or n <= max_n:
+        return models, labels
+    rng = np.random.default_rng(seed)
+    classes = np.unique(labels)
+    per_class = max(1, max_n // len(classes))
+    idx = []
+    for c in classes:
+        ci = np.where(labels == c)[0]
+        idx.extend(rng.choice(ci, size=min(per_class, len(ci)), replace=False).tolist())
+    idx = np.array(sorted(idx))
+    sub = [{**m, "emb": m["emb"][idx]} for m in models]
+    print(f"  Subsampled {n:,} → {len(idx):,} neurons for CKA/kNN (stratified, seed={seed})")
+    return sub, labels[idx]
+
+
 def main():
     print(f"\n{'='*60}")
     print("  Computing PRH evaluation metrics")
@@ -115,11 +134,14 @@ def main():
     with open(OUT / "cka_labels.json", "w") as f:
         json.dump(meta, f, indent=2)
 
+    # Subsample for O(N²) operations if dataset is large
+    feat_sub,  labels_sub = subsample(feat_models,  labels, CKA_MAX_N)
+    logit_sub, _          = subsample(logit_models, labels, CKA_MAX_N)
+
     # ── 1a. Debiased CKA — feature space ─────────────────────────────────────
     print("Computing debiased CKA on feature embeddings (32-dim)...")
-    feat_mat, feat_within, feat_cross = compute_cka_matrix(feat_models)
+    feat_mat, feat_within, feat_cross = compute_cka_matrix(feat_sub)
     np.save(OUT / "cka_feat_matrix.npy", feat_mat)
-    # keep old filename as alias for figure scripts
     np.save(OUT / "cka_matrix.npy", feat_mat)
     print(f"\n{PASS} Feature CKA saved")
     print(f"  Within-partition: {feat_within.mean():.3f} ± {feat_within.std():.3f}")
@@ -128,7 +150,7 @@ def main():
 
     # ── 1b. Debiased CKA — logit space ───────────────────────────────────────
     print(f"\nComputing debiased CKA on logit embeddings ({logit_models[0]['emb'].shape[1]}-dim)...")
-    logit_mat, logit_within, logit_cross = compute_cka_matrix(logit_models)
+    logit_mat, logit_within, logit_cross = compute_cka_matrix(logit_sub)
     np.save(OUT / "cka_logit_matrix.npy", logit_mat)
     print(f"\n{PASS} Logit CKA saved  ← primary PRH metric")
     print(f"  Within-partition: {logit_within.mean():.3f} ± {logit_within.std():.3f}")
@@ -249,8 +271,8 @@ def main():
             pair_type = ("within_partition"
                          if feat_models[i]["part_id"] == feat_models[j]["part_id"]
                          else "cross_partition")
-            jac_feat  = knn_jaccard(feat_models[i]["emb"],  feat_models[j]["emb"],  k=KNN_K)
-            jac_logit = knn_jaccard(logit_models[i]["emb"], logit_models[j]["emb"], k=KNN_K)
+            jac_feat  = knn_jaccard(feat_sub[i]["emb"],  feat_sub[j]["emb"],  k=KNN_K)
+            jac_logit = knn_jaccard(logit_sub[i]["emb"], logit_sub[j]["emb"], k=KNN_K)
             jaccard_rows.append({
                 "model_a":     feat_models[i]["label"],
                 "model_b":     feat_models[j]["label"],
