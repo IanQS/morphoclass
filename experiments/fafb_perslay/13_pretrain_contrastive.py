@@ -52,11 +52,12 @@ LOG_PATH = OUT / "pretrain_log.csv"
 
 # ── Hyperparameters ───────────────────────────────────────────────────────────
 N_FEATURES   = 32       # must match downstream CKA code
-N_EPOCHS     = 300      # pretraining convergence; fine-tune further with 03_train
+N_EPOCHS     = 500      # total epochs (warmup + contrastive)
+WARMUP_EPOCHS = 200     # pure CE warmup before SupCon is introduced
 BATCH_SIZE   = 32       # per-class examples in balanced batch (total = K × n_classes)
 LR           = 5e-4
 WEIGHT_DECAY = 5e-4
-ALPHA        = 0.5      # loss = ALPHA * CE + (1-ALPHA) * SupCon
+ALPHA        = 0.5      # loss = ALPHA * CE + (1-ALPHA) * SupCon  (after warmup)
 TEMPERATURE  = 0.07     # SupCon temperature (standard value from Khosla 2020)
 
 PASS = "\033[92m[PASS]\033[0m"
@@ -248,9 +249,14 @@ def pretrain_one(part_id, seed, splits, data_list, all_labels, n_classes, device
                                                batch.diagram_batch)        # (N, F)
             features_norm = F.normalize(features, p=2, dim=1)             # unit sphere
 
-            ce_loss  = F.nll_loss(logits, batch.y)
-            sc_loss  = supcon_loss(features_norm, batch.y)
-            loss     = ALPHA * ce_loss + (1.0 - ALPHA) * sc_loss
+            ce_loss = F.nll_loss(logits, batch.y)
+            if epoch < WARMUP_EPOCHS:
+                # Pure CE warmup — let classification converge before shaping geometry
+                sc_loss = torch.tensor(0.0, device=device)
+                loss    = ce_loss
+            else:
+                sc_loss = supcon_loss(features_norm, batch.y)
+                loss    = ALPHA * ce_loss + (1.0 - ALPHA) * sc_loss
 
             optimizer.zero_grad()
             loss.backward()
@@ -262,10 +268,11 @@ def pretrain_one(part_id, seed, splits, data_list, all_labels, n_classes, device
             n_steps += 1
             step    += 1
 
-        if (epoch + 1) % 50 == 0 or epoch == 0:
+        if (epoch + 1) % 50 == 0 or epoch == 0 or epoch == WARMUP_EPOCHS:
             val_acc, val_f1 = evaluate(model, data_list, val_idx, BATCH_SIZE * 4, device)
             elapsed = time.time() - t0
-            print(f"    epoch {epoch+1:3d}  "
+            phase = "warmup" if epoch < WARMUP_EPOCHS else "CE+SupCon"
+            print(f"    epoch {epoch+1:3d} [{phase}]  "
                   f"ce={epoch_ce/n_steps:.3f}  "
                   f"sc={epoch_sc/n_steps:.3f}  "
                   f"val_acc={val_acc:.3f}  "
@@ -294,8 +301,8 @@ def main(only_partition=None, seeds=(0, 1)):
     print(f"\n{'='*60}")
     print(f"  CorianderNet contrastive pretraining")
     print(f"  Device:   {device}")
-    print(f"  Loss:     {ALPHA:.1f}×CE + {1-ALPHA:.1f}×SupCon  (τ={TEMPERATURE})")
-    print(f"  Epochs:   {N_EPOCHS}  |  k/class: {BATCH_SIZE}  |  lr: {LR}")
+    print(f"  Loss:     warmup {WARMUP_EPOCHS}ep CE-only → {ALPHA:.1f}×CE + {1-ALPHA:.1f}×SupCon  (τ={TEMPERATURE})")
+    print(f"  Epochs:   {N_EPOCHS} total  |  k/class: {BATCH_SIZE}  |  lr: {LR}")
     print(f"{'='*60}\n")
 
     samples, label_names = load_dataset(DATA_CSV)

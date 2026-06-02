@@ -72,8 +72,14 @@ def load_logit_models(tag=""):
         print(f"{FAIL} No logit embeddings found matching '{prefix}part_*.npy'.")
         print(f"  Run: python 04_extract_embeddings.py {flag}")
         sys.exit(1)
+    import re
     models = []
     for f in files:
+        m = re.search(r'part_(\d+)_s(\d+)', f.stem)
+        if not m:
+            continue
+        part_id = int(m.group(1))
+        seed    = int(m.group(2))
         models.append({
             "label":   f"P{part_id}S{seed}",
             "part_id": part_id,
@@ -437,7 +443,26 @@ def fig_combined(mat, models, within_cka, cross_cka,
 
 # ── Main ──────────────────────────────────────────────────────────────────────
 
-def main(tag=""):
+def subsample_models(models, labels, max_n=4000, seed=42):
+    """Stratified subsample to max_n neurons for CKA/kNN (O(N²) ops)."""
+    n = len(labels)
+    if n <= max_n:
+        return models, labels
+    rng = np.random.default_rng(seed)
+    classes = np.unique(labels)
+    per_class = max(1, max_n // len(classes))
+    idx = []
+    for c in classes:
+        ci = np.where(labels == c)[0]
+        chosen = rng.choice(ci, size=min(per_class, len(ci)), replace=False)
+        idx.extend(chosen.tolist())
+    idx = np.array(sorted(idx))
+    sub_models = [{**m, "emb": m["emb"][idx]} for m in models]
+    print(f"  Subsampled {n:,} → {len(idx):,} neurons for CKA/kNN (stratified, seed={seed})")
+    return sub_models, labels[idx]
+
+
+def main(tag="", max_n=4000):
     label = f"pretrain ({tag})" if tag else "standard"
     print(f"\n{'='*60}")
     print(f"  PersLay/CorianderNet Progress Report  [{label}]")
@@ -448,9 +473,12 @@ def main(tag=""):
     n_neurons, n_classes = len(labels), len(label_names)
     print(f"  {len(models)} models | {n_neurons:,} neurons | {n_classes} classes\n")
 
+    # Subsample for O(N²) metrics if dataset is large
+    cka_models, cka_labels = subsample_models(models, labels, max_n=max_n)
+
     # ── CKA ──────────────────────────────────────────────────────────────────
     print("Computing CKA matrix (logit space)...")
-    cka_mat, within_cka, cross_cka = compute_cka(models)
+    cka_mat, within_cka, cross_cka = compute_cka(cka_models)
     np.save(MET_DIR / "report_cka_logit_matrix.npy", cka_mat)
 
     print("\nComputing permutation null (CKA)...")
@@ -472,11 +500,11 @@ def main(tag=""):
 
     # ── kNN Jaccard ───────────────────────────────────────────────────────────
     print("\nComputing kNN Jaccard stability...")
-    within_knn, cross_knn = compute_knn(models)
+    within_knn, cross_knn = compute_knn(cka_models)
 
     # ── Silhouette ────────────────────────────────────────────────────────────
     print("\nComputing silhouette scores...")
-    sil_scores = compute_silhouette(models, labels)
+    sil_scores = compute_silhouette(models, labels)  # already subsampled internally
 
     # ── Accuracy from run log (pretrain log has val only; standard has test) ──
     pretrain_log = Path("outputs/fafb/models/pretrain_log.csv")
@@ -555,5 +583,7 @@ if __name__ == "__main__":
     parser = argparse.ArgumentParser()
     parser.add_argument("--tag", default="",
                         help="Embedding tag: '' for standard, 'pretrain' for contrastive pretrain")
+    parser.add_argument("--max-n", type=int, default=4000,
+                        help="Max neurons for CKA/kNN (stratified subsample if larger, default 4000)")
     args = parser.parse_args()
-    main(args.tag)
+    main(args.tag, args.max_n)
