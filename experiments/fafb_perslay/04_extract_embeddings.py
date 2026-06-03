@@ -123,6 +123,16 @@ def main(tag=""):
 
     print(f"Found {len(pt_files)} model files:")
     for pt in pt_files:
+        # Skip if both output files exist and are newer than the model
+        m = re.search(r'part_(\d+)_s(\d+)', pt.stem)
+        if m:
+            pid, sid = m.group(1), m.group(2)
+            emb_out   = OUT / f"emb_{emb_prefix}part_{pid}_s{sid}.npy"
+            logit_out = OUT / f"logit_{emb_prefix}part_{pid}_s{sid}.npy"
+            if (emb_out.exists() and logit_out.exists() and
+                    emb_out.stat().st_mtime > pt.stat().st_mtime):
+                print(f"  SKIP (up-to-date): {pt.name}")
+                continue
         # Robust parser: extract part number and seed via regex
         # handles both perslay_part_0_s2 and perslay_pretrain_part_0_s2
         m = re.search(r'part_(\d+)_s(\d+)', pt.stem)

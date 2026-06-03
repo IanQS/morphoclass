@@ -2,9 +2,10 @@
 #SBATCH --job-name=prh-eval
 #SBATCH --account=stf-ckpt
 #SBATCH --partition=ckpt
-#SBATCH --cpus-per-task=4
-#SBATCH --mem=8G
-#SBATCH --time=02:00:00
+#SBATCH --gres=gpu:a40:1
+#SBATCH --cpus-per-task=8
+#SBATCH --mem=16G
+#SBATCH --time=01:00:00
 #SBATCH --output=outputs/fafb/logs/eval_%j.out
 #SBATCH --error=outputs/fafb/logs/eval_%j.err
 

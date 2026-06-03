@@ -69,22 +69,29 @@ def load_models(prefix):
     return result
 
 
+def _cka_pair(args):
+    i, j, Xi, Xj = args
+    return i, j, debiased_cka(Xi, Xj)
+
+
 def compute_cka_matrix(models):
-    """Compute pairwise debiased CKA and return (matrix, within, cross arrays)."""
-    n = len(models)
-    mat = np.zeros((n, n))
+    """Compute pairwise debiased CKA in parallel, return (matrix, within, cross)."""
+    from multiprocessing import Pool
+    import os
+    n        = len(models)
+    mat      = np.zeros((n, n))
     part_ids = np.array([m["part_id"] for m in models])
-    for i in range(n):
-        for j in range(i, n):
-            v = debiased_cka(models[i]["emb"], models[j]["emb"])
+    pairs    = [(i, j, models[i]["emb"], models[j]["emb"])
+                for i in range(n) for j in range(i, n)]
+    n_cpu = min(int(os.environ.get("SLURM_CPUS_PER_TASK", 4)), len(pairs))
+    print(f"  Computing {n}×{n} CKA matrix ({len(pairs)} pairs) on {n_cpu} CPUs...")
+    with Pool(n_cpu) as pool:
+        for i, j, v in pool.imap_unordered(_cka_pair, pairs, chunksize=4):
             mat[i, j] = mat[j, i] = v
-        print(f"  Row {i+1}/{n} done")
     within_mask = part_ids[:, None] == part_ids[None, :]
     cross_mask  = ~within_mask
     np.fill_diagonal(within_mask, False)
-    within = mat[within_mask]
-    cross  = mat[cross_mask]
-    return mat, within, cross
+    return mat, mat[within_mask], mat[cross_mask]
 
 
 def subsample(models, labels, max_n, seed=42):
