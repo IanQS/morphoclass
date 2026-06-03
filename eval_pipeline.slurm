@@ -25,6 +25,14 @@ echo "Started: $(date)"
 
 PYTHON=${PYTHON:-/gscratch/scrubbed/emazuh/morphoclass/bin/python}
 
+# Unbuffered output so logs appear in real time
+export PYTHONUNBUFFERED=1
+# Limit BLAS to 1 thread per call — prevents over-subscription when numpy
+# is called from multiple threads or repeatedly in a loop
+export OMP_NUM_THREADS=1
+export MKL_NUM_THREADS=1
+export OPENBLAS_NUM_THREADS=1
+
 "$PYTHON" -c "import torch; print('torch ok, CUDA:', torch.cuda.is_available())"
 
 echo "--- Step 04: extract embeddings ---"

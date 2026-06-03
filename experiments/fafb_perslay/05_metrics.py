@@ -70,29 +70,18 @@ def load_models(prefix):
 
 
 def compute_cka_matrix(models):
-    """Compute pairwise debiased CKA in parallel, return (matrix, within, cross).
-
-    Uses ThreadPoolExecutor (not multiprocessing) so numpy arrays are shared
-    in memory without pickling — avoids OpenBLAS fork/deadlock issues.
-    """
-    from concurrent.futures import ThreadPoolExecutor
-    import os
+    """Compute pairwise debiased CKA, return (matrix, within, cross)."""
     n        = len(models)
     mat      = np.zeros((n, n))
     part_ids = np.array([m["part_id"] for m in models])
-    embs     = [m["emb"] for m in models]
-    pairs    = [(i, j) for i in range(n) for j in range(i, n)]
-    n_cpu    = min(int(os.environ.get("SLURM_CPUS_PER_TASK", 4)), len(pairs))
-    print(f"  Computing {n}×{n} CKA matrix ({len(pairs)} pairs) on {n_cpu} threads...")
-
-    def _compute(ij):
-        i, j = ij
-        return i, j, debiased_cka(embs[i], embs[j])
-
-    with ThreadPoolExecutor(max_workers=n_cpu) as ex:
-        for i, j, v in ex.map(_compute, pairs):
+    n_pairs  = n * (n + 1) // 2
+    print(f"  Computing {n}×{n} CKA matrix ({n_pairs} pairs)...")
+    sys.stdout.flush()
+    for i in range(n):
+        for j in range(i, n):
+            v = debiased_cka(models[i]["emb"], models[j]["emb"])
             mat[i, j] = mat[j, i] = v
-
+        print(f"  Row {i+1}/{n} done", flush=True)
     within_mask = part_ids[:, None] == part_ids[None, :]
     cross_mask  = ~within_mask
     np.fill_diagonal(within_mask, False)
