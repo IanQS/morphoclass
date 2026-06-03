@@ -23,7 +23,7 @@ Run:
   python experiments/fafb_perslay/05_metrics.py
 """
 
-import json, sys, csv
+import json, os, sys, csv
 from pathlib import Path
 import numpy as np
 import pandas as pd
@@ -69,25 +69,30 @@ def load_models(prefix):
     return result
 
 
-def _cka_pair(args):
-    i, j, Xi, Xj = args
-    return i, j, debiased_cka(Xi, Xj)
-
-
 def compute_cka_matrix(models):
-    """Compute pairwise debiased CKA in parallel, return (matrix, within, cross)."""
-    from multiprocessing import Pool
+    """Compute pairwise debiased CKA in parallel, return (matrix, within, cross).
+
+    Uses ThreadPoolExecutor (not multiprocessing) so numpy arrays are shared
+    in memory without pickling — avoids OpenBLAS fork/deadlock issues.
+    """
+    from concurrent.futures import ThreadPoolExecutor
     import os
     n        = len(models)
     mat      = np.zeros((n, n))
     part_ids = np.array([m["part_id"] for m in models])
-    pairs    = [(i, j, models[i]["emb"], models[j]["emb"])
-                for i in range(n) for j in range(i, n)]
-    n_cpu = min(int(os.environ.get("SLURM_CPUS_PER_TASK", 4)), len(pairs))
-    print(f"  Computing {n}×{n} CKA matrix ({len(pairs)} pairs) on {n_cpu} CPUs...")
-    with Pool(n_cpu) as pool:
-        for i, j, v in pool.imap_unordered(_cka_pair, pairs, chunksize=4):
+    embs     = [m["emb"] for m in models]
+    pairs    = [(i, j) for i in range(n) for j in range(i, n)]
+    n_cpu    = min(int(os.environ.get("SLURM_CPUS_PER_TASK", 4)), len(pairs))
+    print(f"  Computing {n}×{n} CKA matrix ({len(pairs)} pairs) on {n_cpu} threads...")
+
+    def _compute(ij):
+        i, j = ij
+        return i, j, debiased_cka(embs[i], embs[j])
+
+    with ThreadPoolExecutor(max_workers=n_cpu) as ex:
+        for i, j, v in ex.map(_compute, pairs):
             mat[i, j] = mat[j, i] = v
+
     within_mask = part_ids[:, None] == part_ids[None, :]
     cross_mask  = ~within_mask
     np.fill_diagonal(within_mask, False)
