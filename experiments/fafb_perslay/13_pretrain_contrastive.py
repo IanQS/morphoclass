@@ -31,6 +31,7 @@ from pathlib import Path
 
 import numpy as np
 import torch
+import torch.nn as nn
 import torch.nn.functional as F
 from sklearn.metrics import accuracy_score, f1_score
 from torch.optim import Adam
@@ -51,17 +52,46 @@ OUT.mkdir(parents=True, exist_ok=True)
 LOG_PATH = OUT / "pretrain_log.csv"
 
 # ── Hyperparameters ───────────────────────────────────────────────────────────
-N_FEATURES   = 32       # must match downstream CKA code
-N_EPOCHS     = 500      # total epochs (warmup + contrastive)
+N_FEATURES    = 32      # must match downstream CKA code
+N_EPOCHS      = 500     # total epochs (warmup + contrastive)
 WARMUP_EPOCHS = 200     # pure CE warmup before SupCon is introduced
-BATCH_SIZE   = 32       # per-class examples in balanced batch (total = K × n_classes)
-LR           = 5e-4
-WEIGHT_DECAY = 5e-4
-ALPHA        = 0.5      # loss = ALPHA * CE + (1-ALPHA) * SupCon  (after warmup)
-TEMPERATURE  = 0.07     # SupCon temperature (standard value from Khosla 2020)
+BATCH_SIZE    = 32      # per-class examples in balanced batch (total = K × n_classes)
+LR            = 5e-4
+WEIGHT_DECAY  = 5e-4
+ALPHA         = 0.5     # loss = ALPHA * CE + (1-ALPHA) * SupCon  (after warmup)
+TEMPERATURE   = 0.07    # SupCon temperature (standard value from Khosla 2020)
+PROJ_HIDDEN   = 64      # projection head hidden dim
+PROJ_OUT      = 64      # projection head output dim (SupCon operates here)
 
 PASS = "\033[92m[PASS]\033[0m"
 WARN = "\033[93m[WARN]\033[0m"
+
+
+# ── Projection Head ────────────────────────────────────────────────────────────
+
+class ProjectionHead(nn.Module):
+    """
+    2-layer MLP projection head (SimCLR / SupCon standard).
+
+    Maps backbone features h (32-dim, always ≥ 0) to a projected space z
+    (64-dim, unconstrained sign) where SupCon is applied.  This decouples
+    the contrastive geometry from the backbone representation, allowing h to
+    stay in the positive orthant while z develops proper class separation.
+
+    The output is L2-normalised so cosine similarity = dot product.
+    """
+    def __init__(self, in_dim: int = N_FEATURES,
+                 hidden_dim: int = PROJ_HIDDEN,
+                 out_dim: int = PROJ_OUT):
+        super().__init__()
+        self.net = nn.Sequential(
+            nn.Linear(in_dim, hidden_dim),
+            nn.ReLU(),
+            nn.Linear(hidden_dim, out_dim),   # no activation — allows negative values
+        )
+
+    def forward(self, x: torch.Tensor) -> torch.Tensor:
+        return F.normalize(self.net(x), p=2, dim=1)
 
 
 # ── Supervised Contrastive Loss ────────────────────────────────────────────────
@@ -202,8 +232,10 @@ def evaluate(model, data_list, indices, batch_size, device):
 # ── Training ──────────────────────────────────────────────────────────────────
 
 def pretrain_one(part_id, seed, splits, data_list, all_labels, n_classes, device,
-                 writer, log_file):
-    model_path = OUT / f"perslay_pretrain_{part_id}_s{seed}.pt"
+                 writer, log_file, use_proj_head=True):
+    suffix     = "_proj" if use_proj_head else ""
+    model_path = OUT / f"perslay_pretrain{suffix}_{part_id}_s{seed}.pt"
+    proj_path  = OUT / f"proj_head{suffix}_{part_id}_s{seed}.pt"
     if model_path.exists():
         print(f"  SKIP (exists): {model_path.name}")
         return
@@ -224,8 +256,10 @@ def pretrain_one(part_id, seed, splits, data_list, all_labels, n_classes, device
         seed=seed,
     )
 
-    model     = CorianderNet(n_classes=n_classes, n_features=N_FEATURES).to(device)
-    optimizer = Adam(model.parameters(), lr=LR, weight_decay=WEIGHT_DECAY)
+    model      = CorianderNet(n_classes=n_classes, n_features=N_FEATURES).to(device)
+    proj_head  = ProjectionHead().to(device) if use_proj_head else None
+    all_params = list(model.parameters()) + (list(proj_head.parameters()) if proj_head else [])
+    optimizer  = Adam(all_params, lr=LR, weight_decay=WEIGHT_DECAY)
 
     print(f"\n  Balanced batch: {BATCH_SIZE}/class × {n_classes_present} classes "
           f"= {BATCH_SIZE * n_classes_present} per step  |  {n_batches} steps/epoch")
@@ -243,19 +277,22 @@ def pretrain_one(part_id, seed, splits, data_list, all_labels, n_classes, device
                 break
             batch = batch.to(device)
 
-            # Forward — full model for CE; feature extractor for SupCon
+            # Forward — full model for CE; projection head for SupCon
             logits   = model(batch)                                        # log-softmax (N, C)
             features = model.feature_extractor(batch.diagram,
-                                               batch.diagram_batch)        # (N, F)
-            features_norm = F.normalize(features, p=2, dim=1)             # unit sphere
+                                               batch.diagram_batch)        # (N, 32) always ≥ 0
 
             ce_loss = F.nll_loss(logits, batch.y)
             if epoch < WARMUP_EPOCHS:
-                # Pure CE warmup — let classification converge before shaping geometry
                 sc_loss = torch.tensor(0.0, device=device)
                 loss    = ce_loss
             else:
-                sc_loss = supcon_loss(features_norm, batch.y)
+                if proj_head is not None:
+                    # Project to unconstrained space — breaks positive-orthant constraint
+                    z = proj_head(features)                                # (N, 64) L2-norm'd
+                else:
+                    z = F.normalize(features, p=2, dim=1)
+                sc_loss = supcon_loss(z, batch.y)
                 loss    = ALPHA * ce_loss + (1.0 - ALPHA) * sc_loss
 
             optimizer.zero_grad()
@@ -271,7 +308,8 @@ def pretrain_one(part_id, seed, splits, data_list, all_labels, n_classes, device
         if (epoch + 1) % 50 == 0 or epoch == 0 or epoch == WARMUP_EPOCHS:
             val_acc, val_f1 = evaluate(model, data_list, val_idx, BATCH_SIZE * 4, device)
             elapsed = time.time() - t0
-            phase = "warmup" if epoch < WARMUP_EPOCHS else "CE+SupCon"
+            proj_tag = "+proj" if use_proj_head else ""
+            phase = "warmup" if epoch < WARMUP_EPOCHS else f"CE+SupCon{proj_tag}"
             print(f"    epoch {epoch+1:3d} [{phase}]  "
                   f"ce={epoch_ce/n_steps:.3f}  "
                   f"sc={epoch_sc/n_steps:.3f}  "
@@ -291,18 +329,24 @@ def pretrain_one(part_id, seed, splits, data_list, all_labels, n_classes, device
             log_file.flush()
 
     torch.save(model.state_dict(), model_path)
+    if proj_head is not None:
+        torch.save(proj_head.state_dict(), proj_path)
     print(f"  {PASS} Saved → {model_path}")
+    if proj_head is not None:
+        print(f"  {PASS} Proj head → {proj_path}")
 
 
 # ── Main ──────────────────────────────────────────────────────────────────────
 
-def main(only_partition=None, seeds=(0, 1)):
+def main(only_partition=None, seeds=(0, 1), use_proj_head=True):
     device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
+    proj_str = f"ProjectionHead(32→{PROJ_HIDDEN}→{PROJ_OUT})" if use_proj_head else "none (direct L2-norm)"
     print(f"\n{'='*60}")
     print(f"  CorianderNet contrastive pretraining")
-    print(f"  Device:   {device}")
-    print(f"  Loss:     warmup {WARMUP_EPOCHS}ep CE-only → {ALPHA:.1f}×CE + {1-ALPHA:.1f}×SupCon  (τ={TEMPERATURE})")
-    print(f"  Epochs:   {N_EPOCHS} total  |  k/class: {BATCH_SIZE}  |  lr: {LR}")
+    print(f"  Device:       {device}")
+    print(f"  Loss:         warmup {WARMUP_EPOCHS}ep CE → {ALPHA:.1f}×CE + {1-ALPHA:.1f}×SupCon  (τ={TEMPERATURE})")
+    print(f"  Proj head:    {proj_str}")
+    print(f"  Epochs:       {N_EPOCHS} total  |  k/class: {BATCH_SIZE}  |  lr: {LR}")
     print(f"{'='*60}\n")
 
     samples, label_names = load_dataset(DATA_CSV)
@@ -344,7 +388,8 @@ def main(only_partition=None, seeds=(0, 1)):
                   f"(train={len(splits['train'])} val={len(splits['val'])} "
                   f"test={len(splits['test'])} held-out)")
             pretrain_one(part_id, seed, splits, data_list, all_labels,
-                         n_classes, device, writer, log_file)
+                         n_classes, device, writer, log_file,
+                         use_proj_head=use_proj_head)
 
     log_file.close()
     print(f"\nPretrain log → {LOG_PATH}")
@@ -358,5 +403,7 @@ if __name__ == "__main__":
                         help="Run only this partition (e.g. part_0)")
     parser.add_argument("--seeds", nargs="+", type=int, default=[0, 1],
                         help="Seeds to run (default: 0 1)")
+    parser.add_argument("--no-proj-head", action="store_true",
+                        help="Disable projection head (apply SupCon directly to features)")
     args = parser.parse_args()
-    main(args.partition, args.seeds)
+    main(args.partition, args.seeds, use_proj_head=not args.no_proj_head)
