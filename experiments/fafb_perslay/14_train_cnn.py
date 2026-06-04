@@ -78,7 +78,7 @@ def build_data_objects(diagrams, labels, max_val, bins=IMAGE_SIZE):
     data_list = []
     for diag, y in zip(diagrams, labels):
         img = rasterize(diag, bins=bins, max_val=max_val)
-        img_t = torch.tensor(img, dtype=torch.float32).unsqueeze(0)  # (1, H, W)
+        img_t = torch.tensor(img, dtype=torch.float32).unsqueeze(0).unsqueeze(0)  # (1, 1, H, W) → batches to (N, 1, H, W)
         data_list.append(Data(
             image=img_t,
             y=torch.tensor(int(y), dtype=torch.long),
