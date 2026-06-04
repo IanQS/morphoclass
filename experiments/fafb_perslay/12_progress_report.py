@@ -134,11 +134,16 @@ def compute_knn(models):
 # ── Silhouette ────────────────────────────────────────────────────────────────
 
 def compute_silhouette(models, labels):
+    """Compute silhouette per model using precomputed distance matrix for speed.
+    Expects models/labels already subsampled to a manageable N."""
+    from sklearn.metrics import pairwise_distances
     scores = []
     for m in models:
         try:
-            s = silhouette_score(m["emb"], labels, metric="euclidean",
-                                 sample_size=min(2000, len(labels)), random_state=42)
+            emb = m["emb"]
+            emb_norm = emb / (np.linalg.norm(emb, axis=1, keepdims=True) + 1e-9)
+            D = pairwise_distances(emb_norm, metric="euclidean")
+            s = silhouette_score(D, labels, metric="precomputed")
             scores.append(s)
         except Exception:
             scores.append(np.nan)
@@ -503,8 +508,8 @@ def main(tag="", max_n=4000):
     within_knn, cross_knn = compute_knn(cka_models)
 
     # ── Silhouette ────────────────────────────────────────────────────────────
-    print("\nComputing silhouette scores...")
-    sil_scores = compute_silhouette(models, labels)  # already subsampled internally
+    print("\nComputing silhouette scores (precomputed distance matrix)...")
+    sil_scores = compute_silhouette(cka_models, cka_labels)
 
     # ── Accuracy from run log (pretrain log has val only; standard has test) ──
     pretrain_log = Path("outputs/fafb/models/pretrain_log.csv")
