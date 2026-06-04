@@ -106,17 +106,24 @@ def subsample(models, labels, max_n, seed=42):
     return sub, labels[idx]
 
 
-def main():
+def main(model_type="perslay"):
+    """
+    model_type: "perslay" — loads emb_part_*.npy / logit_part_*.npy (CorianderNet)
+                "cnn"     — loads cnn_emb_part_*.npy / cnn_logit_part_*.npy (CNNet)
+    """
+    feat_prefix  = "emb"      if model_type == "perslay" else "cnn_emb"
+    logit_prefix = "logit"    if model_type == "perslay" else "cnn_logit"
+
     print(f"\n{'='*60}")
-    print("  Computing PRH evaluation metrics")
+    print(f"  Computing PRH evaluation metrics  [{model_type}]")
     print(f"{'='*60}\n")
 
     labels = np.load(EMB_DIR / "labels.npy")
     with open(EMB_DIR / "label_names.json") as f:
         label_names = json.load(f)
 
-    feat_models  = load_models("emb")
-    logit_models = load_models("logit")
+    feat_models  = load_models(feat_prefix)
+    logit_models = load_models(logit_prefix)
 
     if not feat_models:
         print(f"No embeddings found in {EMB_DIR}. Run 04_extract_embeddings.py first.")
@@ -281,6 +288,9 @@ def main():
             jac_feat  = knn_jaccard(feat_sub[i]["emb"],  feat_sub[j]["emb"],  k=KNN_K)
             jac_logit = knn_jaccard(logit_sub[i]["emb"], logit_sub[j]["emb"], k=KNN_K)
             jaccard_rows.append({
+                "model_type":  model_type,
+                "n_neurons":   int(len(labels)),
+                "n_classes":   int(len(label_names)),
                 "model_a":     feat_models[i]["label"],
                 "model_b":     feat_models[j]["label"],
                 "part_a":      feat_models[i]["part_id"],
@@ -401,4 +411,10 @@ def main():
 
 
 if __name__ == "__main__":
-    main()
+    import argparse
+    parser = argparse.ArgumentParser()
+    parser.add_argument("--model-type", default="perslay",
+                        choices=["perslay", "cnn"],
+                        help="Which model embeddings to evaluate (default: perslay)")
+    args = parser.parse_args()
+    main(model_type=args.model_type)
