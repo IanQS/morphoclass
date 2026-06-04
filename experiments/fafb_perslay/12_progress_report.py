@@ -64,8 +64,11 @@ FAIL = "\033[91m[FAIL]\033[0m"
 
 # ── Data loading ──────────────────────────────────────────────────────────────
 
-def load_logit_models(tag=""):
-    prefix = f"logit_{tag+'_' if tag else ''}"
+def load_logit_models(tag="", model_type="perslay"):
+    if model_type == "cnn":
+        prefix = "cnn_logit_"
+    else:
+        prefix = f"logit_{tag+'_' if tag else ''}"
     files = sorted(EMB_DIR.glob(f"{prefix}part_*.npy"))
     if not files:
         flag = f"--tag {tag}" if tag else ""
@@ -438,8 +441,8 @@ def fig_combined(mat, models, within_cka, cross_cka,
              f"Null p95 — see progress_report.json",
              transform=ax5.transAxes, fontsize=7.5, color=MUTED, va="bottom")
 
-    title_tag = f" [{tag}]" if tag else ""
-    fig.suptitle(f"PersLay/CorianderNet — PRH Progress Report{title_tag}", color=WHITE, fontsize=13, y=1.01)
+    arch_name = "CNNet" if model_type == "cnn" else "PersLay/CorianderNet"
+    fig.suptitle(f"{arch_name} — PRH Progress Report", color=WHITE, fontsize=13, y=1.01)
     out = FIG_DIR / f"report_combined{suffix}.png"
     plt.savefig(out, dpi=150, bbox_inches="tight", facecolor=DARK_BG)
     plt.close()
@@ -467,13 +470,13 @@ def subsample_models(models, labels, max_n=4000, seed=42):
     return sub_models, labels[idx]
 
 
-def main(tag="", max_n=4000):
-    label = f"pretrain ({tag})" if tag else "standard"
+def main(tag="", max_n=4000, model_type="perslay"):
+    label = f"{model_type}" + (f" [{tag}]" if tag else "")
     print(f"\n{'='*60}")
     print(f"  PersLay/CorianderNet Progress Report  [{label}]")
     print(f"{'='*60}\n")
 
-    models = load_logit_models(tag)
+    models = load_logit_models(tag, model_type=model_type)
     labels, label_names = load_labels()
     n_neurons, n_classes = len(labels), len(label_names)
     print(f"  {len(models)} models | {n_neurons:,} neurons | {n_classes} classes\n")
@@ -563,7 +566,8 @@ def main(tag="", max_n=4000):
             "f1_std":    round(float(df_log.test_f1.std()),   4),
         },
     }
-    suffix   = f"_{tag}" if tag else ""
+    suffix   = f"_{model_type}" if model_type != "perslay" else ""
+    suffix  += f"_{tag}" if tag else ""
     out_json = MET_DIR / f"progress_report{suffix}.json"
     with open(out_json, "w") as f:
         json.dump(report, f, indent=2)
@@ -590,5 +594,7 @@ if __name__ == "__main__":
                         help="Embedding tag: '' for standard, 'pretrain' for contrastive pretrain")
     parser.add_argument("--max-n", type=int, default=4000,
                         help="Max neurons for CKA/kNN (stratified subsample if larger, default 4000)")
+    parser.add_argument("--model-type", default="perslay", choices=["perslay", "cnn"],
+                        help="perslay (default) or cnn")
     args = parser.parse_args()
-    main(args.tag, args.max_n)
+    main(args.tag, args.max_n, args.model_type)
