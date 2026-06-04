@@ -63,10 +63,25 @@ def dark_style():
 dark_style()
 
 # Colorblind-safe palette for cell types (max 8)
-CELL_COLORS = [
+_BASE_COLORS = [
     "#0B8FAC", "#F59E0B", "#EF6351", "#10B981",
     "#8B5CF6", "#EC4899", "#06B6D4", "#84CC16",
+    "#F97316", "#14B8A6", "#A855F7", "#EAB308",
+    "#3B82F6", "#E11D48", "#22C55E", "#FB923C",
+    "#0EA5E9", "#D946EF", "#4ADE80", "#FACC15",
 ]
+
+def _get_colors(n):
+    """Return n distinct colors, cycling through palette if needed."""
+    import matplotlib.cm as cm
+    if n <= len(_BASE_COLORS):
+        return _BASE_COLORS[:n]
+    # Fall back to a continuous colormap for very large class counts
+    cmap = cm.get_cmap("tab20", n)
+    return [f"#{int(r*255):02x}{int(g*255):02x}{int(b*255):02x}"
+            for r, g, b, _ in [cmap(i) for i in range(n)]]
+
+CELL_COLORS = _BASE_COLORS  # kept for backward compat
 
 
 def project_2d(emb: np.ndarray, seed: int = 0) -> np.ndarray:
@@ -131,10 +146,11 @@ def fig1_umap_grid(models, labels, label_names):
             emb = np.load(match[0]["file"])
             proj = project_2d(emb, seed=seed)
 
+            _colors = _get_colors(len(label_names))
             for ci2, cls_idx in enumerate(range(len(label_names))):
                 mask = labels == cls_idx
                 ax.scatter(proj[mask, 0], proj[mask, 1],
-                           c=CELL_COLORS[ci2 % len(CELL_COLORS)],
+                           c=_colors[ci2],
                            s=18, alpha=0.75, edgecolors='none',
                            label=label_names[cls_idx] if (ri == 0 and ci == 0) else "")
 
@@ -145,7 +161,8 @@ def fig1_umap_grid(models, labels, label_names):
                 ax.set_ylabel(f"Partition {part_id}", color=PALE, fontsize=10)
 
     # Shared legend
-    handles = [Patch(color=CELL_COLORS[i], label=label_names[i])
+    colors  = _get_colors(len(label_names))
+    handles = [Patch(color=colors[i], label=label_names[i])
                for i in range(len(label_names))]
     fig.legend(handles=handles, loc='lower center', ncol=min(4, len(label_names)),
                framealpha=0.15, labelcolor=WHITE, fontsize=9,
