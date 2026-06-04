@@ -190,22 +190,27 @@ def main():
 
     # ── 2. Silhouette scores ──────────────────────────────────────────────────
     print(f"\nComputing silhouette scores + permutation nulls...")
+    # Subsample for silhouette — O(N²) distance matrix; cap at CKA_MAX_N
+    sil_models, sil_labels = subsample(feat_models, labels, CKA_MAX_N)
     sil_rows = []
 
-    for m in feat_models:
+    for m in sil_models:
         emb = m["emb"]
-        # L2-normalize before silhouette
         emb_norm = emb / (np.linalg.norm(emb, axis=1, keepdims=True) + 1e-9)
 
-        obs_sil = float(silhouette_score(emb_norm, labels))
+        # Build distance matrix once, reuse for all null permutations
+        from sklearn.metrics import pairwise_distances
+        from sklearn.metrics import silhouette_score as _sil
+        D = pairwise_distances(emb_norm, metric="euclidean")
 
-        # Permutation null (shuffle labels)
+        obs_sil = float(_sil(D, sil_labels, metric="precomputed"))
+
         rng = np.random.default_rng(42)
         null_sils = []
         for _ in range(N_PERM):
-            shuffled = rng.permutation(labels)
+            shuffled = rng.permutation(sil_labels)
             try:
-                null_sils.append(float(silhouette_score(emb_norm, shuffled)))
+                null_sils.append(float(_sil(D, shuffled, metric="precomputed")))
             except Exception:
                 null_sils.append(0.0)
         null_sils = np.array(null_sils)
@@ -234,7 +239,8 @@ def main():
     morph_path = EMB_DIR / "morphometric_emb.npy"
     if morph_path.exists():
         morph_emb = np.load(morph_path)
-        morph_sil = float(silhouette_score(morph_emb, labels))
+        morph_sil = float(silhouette_score(morph_emb, labels,
+                                           sample_size=len(sil_labels), random_state=42))
         print(f"  Morphometric baseline silhouette: {morph_sil:.3f}")
         print(f"  PersLay advantage: {sil_df['silhouette'].mean() - morph_sil:+.3f}")
     else:
