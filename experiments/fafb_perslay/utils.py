@@ -416,6 +416,28 @@ def silhouette_score_manual(X: np.ndarray, labels: np.ndarray) -> float:
     return float(silhouette_score(X, labels, metric='euclidean'))
 
 
+def rsa(X: np.ndarray, Y: np.ndarray) -> tuple[float, float]:
+    """
+    Representational Similarity Analysis (Kendall's τ).
+
+    Computes Kendall's τ between the upper-triangle of the pairwise Euclidean
+    distance matrices of X and Y.  Unlike CKA, RSA is not sensitive to the
+    positive-orthant constraint on PersLay features, making it a useful
+    independent confirmation of representational convergence.
+
+    Returns (tau, p_value).
+    """
+    from scipy.stats import kendalltau
+    from sklearn.metrics import pairwise_distances
+
+    n = X.shape[0]
+    tri = np.triu_indices(n, k=1)
+    dx = pairwise_distances(X, metric="euclidean")[tri]
+    dy = pairwise_distances(Y, metric="euclidean")[tri]
+    tau, p = kendalltau(dx, dy)
+    return float(tau), float(p)
+
+
 def knn_jaccard(X: np.ndarray, Y: np.ndarray, k: int = 5) -> float:
     """
     Mean kNN Jaccard similarity between two embedding spaces.

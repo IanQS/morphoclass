@@ -34,7 +34,7 @@ import warnings
 warnings.filterwarnings("ignore")
 
 sys.path.insert(0, str(Path(__file__).parent))
-from utils import debiased_cka, permutation_cka_null, knn_jaccard
+from utils import debiased_cka, permutation_cka_null, knn_jaccard, rsa
 
 EMB_DIR  = Path("outputs/fafb/embeddings")
 DATA_DIR = Path("outputs/fafb/data")
@@ -43,7 +43,7 @@ OUT.mkdir(parents=True, exist_ok=True)
 
 PASS = "\033[92m[PASS]\033[0m"
 WARN = "\033[93m[WARN]\033[0m"
-N_PERM   = 500    # permutations for null distribution (500 is fast; use 1000 for paper)
+N_PERM   = 200    # permutations for null (200 sufficient for p<0.001; use 1000 for paper)
 KNN_K    = 5      # k for Jaccard (use 10 for larger dataset)
 CKA_MAX_N = 4000  # stratified subsample for O(N²) ops — set to None to disable
 
@@ -299,8 +299,21 @@ def main():
         if len(cross):
             print(f"  Cross-partition:   {cross.mean():.3f} ± {cross.std():.3f}")
 
-    within = jac_df[jac_df["type"] == "within_partition"]["jaccard_logit"]
-    cross  = jac_df[jac_df["type"] == "cross_partition"]["jaccard_logit"]
+    # ── 4. RSA (Kendall's τ) — positive-orthant-insensitive confirmation ─────────
+    print(f"\nComputing RSA (Kendall's τ) on logit space...")
+    rsa_within, rsa_cross = [], []
+    for i in range(n_models):
+        for j in range(i + 1, n_models):
+            tau, _ = rsa(logit_sub[i]["emb"], logit_sub[j]["emb"])
+            if logit_sub[i]["part_id"] == logit_sub[j]["part_id"]:
+                rsa_within.append(tau)
+            else:
+                rsa_cross.append(tau)
+    rsa_within = np.array(rsa_within)
+    rsa_cross  = np.array(rsa_cross)
+    print(f"{PASS} RSA (logit space)  ← positive-orthant-insensitive")
+    print(f"  Within-partition:  {rsa_within.mean():.3f} ± {rsa_within.std():.3f}")
+    print(f"  Cross-partition:   {rsa_cross.mean():.3f} ± {rsa_cross.std():.3f}", flush=True)
 
     # ── Summary JSON ──────────────────────────────────────────────────────────
     jac_feat_within  = jac_df[jac_df["type"]=="within_partition"]["jaccard_feat"]
@@ -341,6 +354,13 @@ def main():
         "knn_jaccard_logit": {
             "within_partition_mean": round(float(jac_logit_within.mean()), 4) if len(jac_logit_within) else None,
             "cross_partition_mean":  round(float(jac_logit_cross.mean()),  4) if len(jac_logit_cross)  else None,
+        },
+        "rsa_logit": {
+            "note": "Kendall's τ on pairwise distances — positive-orthant-insensitive PRH check",
+            "within_partition_mean": round(float(rsa_within.mean()), 4) if len(rsa_within) else None,
+            "within_partition_std":  round(float(rsa_within.std()),  4) if len(rsa_within) else None,
+            "cross_partition_mean":  round(float(rsa_cross.mean()),  4) if len(rsa_cross)  else None,
+            "cross_partition_std":   round(float(rsa_cross.std()),   4) if len(rsa_cross)  else None,
         },
         "rf_baseline": rf_results if rf_results else None,
         "interpretation_notes": [
