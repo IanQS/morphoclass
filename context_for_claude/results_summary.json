@@ -1,0 +1,22 @@
+{
+  "n4000_8cls": {
+    "test_acc": 0.647,
+    "test_acc_std": 0.024,
+    "cka_logit_within": 0.969,
+    "cka_logit_cross": 0.969,
+    "cka_null_p95": 0.0006,
+    "silhouette": -0.018,
+    "knn_jaccard_logit_cross": 0.333,
+    "rf_baseline_acc": 0.844
+  },
+  "n17288_20cls": {
+    "test_acc": 0.487,
+    "test_acc_std": 0.075,
+    "cka_logit_within": 0.89,
+    "cka_logit_cross": 0.899,
+    "cka_null_p95": 0.0,
+    "silhouette": "pending (-0.17 partial)",
+    "knn_jaccard_logit_cross": "pending",
+    "rf_baseline_acc": "pending"
+  }
+}
