@@ -42,7 +42,7 @@ PARTS_JSON = Path("outputs/fafb/data/partitions.json")
 MET_DIR.mkdir(parents=True, exist_ok=True)
 FIG_DIR.mkdir(parents=True, exist_ok=True)
 
-N_PERM = 500
+N_PERM = 200
 KNN_K  = 5
 
 # ── Colour palette ─────────────────────────────────────────────────────────────
@@ -321,7 +321,8 @@ def fig_knn_silhouette(within_knn, cross_knn, sil_scores):
 
 
 def fig_combined(mat, models, within_cka, cross_cka,
-                 within_knn, cross_knn, sil_scores, df_log):
+                 within_knn, cross_knn, sil_scores, df_log,
+                 model_type="perslay", suffix=""):
     fig = plt.figure(figsize=(18, 11), facecolor=DARK_BG)
     gs  = gridspec.GridSpec(2, 3, figure=fig, hspace=0.42, wspace=0.35)
 
@@ -485,21 +486,36 @@ def main(tag="", max_n=4000, model_type="perslay"):
     cka_models, cka_labels = subsample_models(models, labels, max_n=max_n)
 
     # ── CKA ──────────────────────────────────────────────────────────────────
-    print("Computing CKA matrix (logit space)...")
-    cka_mat, within_cka, cross_cka = compute_cka(cka_models)
-    np.save(MET_DIR / "report_cka_logit_matrix.npy", cka_mat)
+    _cka_suffix = f"_{model_type}" if model_type != "perslay" else ""
+    _cka_suffix += f"_{tag}" if tag else ""
+    cka_cache = MET_DIR / f"report_cka_logit_matrix{_cka_suffix}.npy"
+    if cka_cache.exists():
+        print("Loading cached CKA matrix (logit space)...")
+        cka_mat = np.load(cka_cache)
+        part_ids_arr = np.array([m["part_id"] for m in cka_models])
+        within_mask = (part_ids_arr[:, None] == part_ids_arr[None, :])
+        cross_mask  = ~within_mask
+        np.fill_diagonal(within_mask, False)
+        within_cka = cka_mat[within_mask]
+        cross_cka  = cka_mat[cross_mask]
+        print(f"  Within={within_cka.mean():.3f}  Cross={cross_cka.mean():.3f}")
+    else:
+        print("Computing CKA matrix (logit space)...")
+        cka_mat, within_cka, cross_cka = compute_cka(cka_models)
+        np.save(cka_cache, cka_mat)
+        print(f"  Saved CKA cache → {cka_cache.name}")
 
     print("\nComputing permutation null (CKA)...")
-    # Use first cross-partition pair if available, else cross-seed
-    part_ids = [m["part_id"] for m in models]
-    cross_pairs = [(i, j) for i in range(len(models))
-                   for j in range(i+1, len(models))
+    # Use first cross-partition pair if available, else cross-seed — on subsampled data
+    part_ids = [m["part_id"] for m in cka_models]
+    cross_pairs = [(i, j) for i in range(len(cka_models))
+                   for j in range(i+1, len(cka_models))
                    if part_ids[i] != part_ids[j]]
-    same_pairs  = [(i, j) for i in range(len(models))
-                   for j in range(i+1, len(models))
+    same_pairs  = [(i, j) for i in range(len(cka_models))
+                   for j in range(i+1, len(cka_models))
                    if part_ids[i] == part_ids[j]]
     i0, j0 = cross_pairs[0] if cross_pairs else same_pairs[0]
-    null_dist = permutation_cka_null(models[i0]["emb"], models[j0]["emb"],
+    null_dist = permutation_cka_null(cka_models[i0]["emb"], cka_models[j0]["emb"],
                                      n_permutations=N_PERM, seed=42)
     null_p95 = float(np.percentile(null_dist, 95))
     obs_cka  = float(cka_mat[i0, j0])
@@ -516,7 +532,13 @@ def main(tag="", max_n=4000, model_type="perslay"):
 
     # ── Accuracy from run log (pretrain log has val only; standard has test) ──
     pretrain_log = Path("outputs/fafb/models/pretrain_log.csv")
-    log_path = pretrain_log if (tag == "pretrain" and pretrain_log.exists()) else LOG_CSV
+    cnn_log = Path("outputs/fafb/models/cnn_run_log.csv")
+    if model_type == "cnn" and cnn_log.exists():
+        log_path = cnn_log
+    elif tag == "pretrain" and pretrain_log.exists():
+        log_path = pretrain_log
+    else:
+        log_path = LOG_CSV
     df_log = pd.read_csv(log_path)
     if tag == "pretrain":
         # Pretrain log has one row per epoch; take final epoch per partition/seed
@@ -525,13 +547,17 @@ def main(tag="", max_n=4000, model_type="perslay"):
             df_log["test_acc"] = df_log["val_acc"]
             df_log["test_f1"]  = df_log.get("val_f1", df_log["val_acc"])
 
+    suffix = f"_{model_type}" if model_type != "perslay" else ""
+    suffix += f"_{tag}" if tag else ""
+
     # ── Figures ───────────────────────────────────────────────────────────────
     print("\nGenerating figures...")
     fig_cka_heatmap(cka_mat, models, within_cka, cross_cka)
     fig_accuracy(LOG_CSV)
     fig_knn_silhouette(within_knn, cross_knn, sil_scores)
     fig_combined(cka_mat, models, within_cka, cross_cka,
-                 within_knn, cross_knn, sil_scores, df_log)
+                 within_knn, cross_knn, sil_scores, df_log,
+                 model_type=model_type, suffix=suffix)
 
     # ── Save JSON summary ─────────────────────────────────────────────────────
     report = {
@@ -566,8 +592,6 @@ def main(tag="", max_n=4000, model_type="perslay"):
             "f1_std":    round(float(df_log.test_f1.std()),   4),
         },
     }
-    suffix   = f"_{model_type}" if model_type != "perslay" else ""
-    suffix  += f"_{tag}" if tag else ""
     out_json = MET_DIR / f"progress_report{suffix}.json"
     with open(out_json, "w") as f:
         json.dump(report, f, indent=2)

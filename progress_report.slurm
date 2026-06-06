@@ -4,7 +4,7 @@
 #SBATCH --partition=ckpt
 #SBATCH --cpus-per-task=4
 #SBATCH --mem=16G
-#SBATCH --time=00:30:00
+#SBATCH --time=01:30:00
 #SBATCH --output=outputs/fafb/logs/report_%j.out
 #SBATCH --error=outputs/fafb/logs/report_%j.err
 
@@ -26,8 +26,14 @@ echo "Started: $(date)"
 
 PYTHON=${PYTHON:-/gscratch/scrubbed/emazuh/morphoclass/bin/python}
 
-echo "--- Step 12: PersLay progress report ---"
-"$PYTHON" experiments/fafb_perslay/12_progress_report.py
+export PYTHONUNBUFFERED=1
+export OMP_NUM_THREADS=1
+export MKL_NUM_THREADS=1
+export OPENBLAS_NUM_THREADS=1
+
+MODEL_TYPE=${MODEL_TYPE:-perslay}
+echo "--- Step 12: Progress report [model_type=$MODEL_TYPE] ---"
+"$PYTHON" experiments/fafb_perslay/12_progress_report.py --model-type "$MODEL_TYPE"
 
 echo "Finished: $(date)"
 echo "Figures → outputs/fafb/figures/report_*.png"
